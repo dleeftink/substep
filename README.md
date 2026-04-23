@@ -1,4 +1,4 @@
-# su~~p~~*b*step
+# su~~b~~*p*step
 
 The global `substep` namespace for downstream `sup.*` packages. Contains various BigQuery utility functions for scaffolding complex UDFs and TVFs.
 The only 'non-sup' prefixed package as I could not miss the opportunity to obtain the still available `substep` namespace on BigQuery.
