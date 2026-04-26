@@ -1,4 +1,4 @@
-create or replace function get.stringifiedJSONFromStruct(object ANY TYPE) as ((
+create or replace function get.stringifiedJsonFromStruct(object ANY TYPE) as ((
 
   with list as (
   

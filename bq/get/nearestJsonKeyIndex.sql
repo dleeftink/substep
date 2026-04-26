@@ -1,4 +1,4 @@
-create or replace function get.nearestJSONKeyIndex(jsn STRING,idx INT) as (
+create or replace function get.nearestJsonKeyIndex(jsn STRING,idx INT) as (
   coalesce(
     NULLIF(INSTR(jsn, ',', -1 * (LENGTH(jsn) - idx + 2)), 0),
     NULLIF(INSTR(jsn, '[', -1 * (LENGTH(jsn) - idx + 3)), 0),

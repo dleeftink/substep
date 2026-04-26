@@ -4,7 +4,7 @@ create or replace function get.objectMetadata(a INT, b INT, pack ANY TYPE, jsn S
 
     from unnest(pack) as obj
     |> aggregate min_by(obj,pin) head,max_by(obj,pin) tail group by slot,raise
-    |> extend get.nearestJSONKeyIndex(jsn,head.idx) as kpos
+    |> extend get.nearestJsonKeyIndex(jsn,head.idx) as kpos
     |> select cue.objectMetadataInterface(a,b,jsn,head,tail,slot,kpos).*
     
   ),
