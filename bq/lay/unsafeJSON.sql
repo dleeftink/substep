@@ -1,4 +1,5 @@
-create or replace function lay.unsafeJSON(s STRING) AS ((s)
+create or replace function lay.unsafeJSON(str STRING) AS (
+  (str)
   -- 1. JSON Structural Elements (Highest Priority)
   .REPLACE('\x1C','{') -- FS: File Separator (Object Open)
   .REPLACE('\x1D','}') -- GS: Group Separator (Object Close)
@@ -18,5 +19,5 @@ create or replace function lay.unsafeJSON(s STRING) AS ((s)
   .REPLACE('\x05','"') -- ENQ (Enquiry) - Quote/Query Marker
  
 ) OPTIONS (
-  description = "Restores control-character markers back to their original literal characters."
+  description = "Restores control-character markers back to their literal characters."
 );
