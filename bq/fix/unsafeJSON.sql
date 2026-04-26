@@ -1,4 +1,5 @@
-create or replace function fix.unsafeJSON(s STRING, esc BOOL) AS ((s)
+create or replace function fix.unsafeJSON(str STRING, esc BOOL) AS (
+  (str)
   -- 1. JSON Structural Elements (Highest Priority)
   .REPLACE('{', IF(esc, '\x1C', '\\{')) -- FS: File Separator (Object Open)
   .REPLACE('}', IF(esc, '\x1D', '\\}')) -- GS: Group Separator (Object Close)
@@ -15,6 +16,7 @@ create or replace function fix.unsafeJSON(s STRING, esc BOOL) AS ((s)
 
   -- 3. Escapes
   .REPLACE('#', IF(esc, '\x1B', '\\#')) -- ESC: Escape
+
 ) OPTIONS (
   description = "Escapes JSON delimiters using control characters or backslashes to prevent parsing collisions."
 );
