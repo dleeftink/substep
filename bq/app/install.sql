@@ -3,28 +3,28 @@
 -- META FUNCTIONS
 
 -- Source: bq/cue/_meta.sql
-CREATE OR REPLACE FUNCTION cue.meta()AS(STRUCT("Validation: Type checkers and initialisers for the 'subtype' namespace." AS scope,"0.1.0" AS version,"https://github.com/dleeftink/substep" AS repo))OPTIONS(description="Type checkers and initialisers for the 'subtype' namespace.");
+CREATE OR REPLACE FUNCTION cue.meta()AS(STRUCT("Validation: Type checkers and initialisers for the 'subtype' namespace." AS scope,"0.1.2" AS version,"https://github.com/dleeftink/substep" AS repo))OPTIONS(description="Type checkers and initialisers for the 'subtype' namespace.");
 
 -- Source: bq/def/_meta.sql
-CREATE OR REPLACE FUNCTION def.meta()AS(STRUCT("Contracts: Schema defaults and API definitions for the 'substep' namespace." AS scope,"0.1.0" AS version,"https://github.com/dleeftink/substep" AS repo))OPTIONS(description="Schema defaults and API definitions for the 'substep' namespace.");
+CREATE OR REPLACE FUNCTION def.meta()AS(STRUCT("Contracts: Schema defaults and API definitions for the 'substep' namespace." AS scope,"0.1.2" AS version,"https://github.com/dleeftink/substep" AS repo))OPTIONS(description="Schema defaults and API definitions for the 'substep' namespace.");
 
 -- Source: bq/fix/_meta.sql
-CREATE OR REPLACE FUNCTION fix.meta()AS(STRUCT("Fixers: Patchers an correctors for the 'substep' namespace." AS scope,"0.1.1" AS version,"https://github.com/dleeftink/substep" AS repo))OPTIONS(description="Patchers an correctors for the 'substep' namespace.");
+CREATE OR REPLACE FUNCTION fix.meta()AS(STRUCT("Fixers: Patchers an correctors for the 'substep' namespace." AS scope,"0.1.2" AS version,"https://github.com/dleeftink/substep" AS repo))OPTIONS(description="Patchers an correctors for the 'substep' namespace.");
 
 -- Source: bq/get/_meta.sql
-CREATE OR REPLACE FUNCTION get.meta()AS(STRUCT("Extraction: Parsers and extractors for the 'substep' namespace." AS scope,"0.1.1" AS version,"https://github.com/dleeftink/substep" AS repo))OPTIONS(description="Parsers and extractors for the 'substep' namespace.");
+CREATE OR REPLACE FUNCTION get.meta()AS(STRUCT("Extraction: Parsers and extractors for the 'substep' namespace." AS scope,"0.1.2" AS version,"https://github.com/dleeftink/substep" AS repo))OPTIONS(description="Parsers and extractors for the 'substep' namespace.");
 
 -- Source: bq/lay/_meta.sql
-CREATE OR REPLACE FUNCTION lay.meta()AS(STRUCT("Layers: Formatters and layouters for the 'substep' namespace." AS scope,"0.1.1" AS version,"https://github.com/dleeftink/substep" AS repo))OPTIONS(description="Formatters and layouters for the 'substep' namespace.");
+CREATE OR REPLACE FUNCTION lay.meta()AS(STRUCT("Layers: Formatters and layouters for the 'substep' namespace." AS scope,"0.1.2" AS version,"https://github.com/dleeftink/substep" AS repo))OPTIONS(description="Formatters and layouters for the 'substep' namespace.");
 
 -- Source: bq/map/_meta.sql
-CREATE OR REPLACE FUNCTION map.meta()AS(STRUCT("Mapping: Lambdas and transformers for the 'substep' namespace." AS scope,"0.1.1" AS version,"https://github.com/dleeftink/substep" AS repo))OPTIONS(description="Lambdas and transformers for the 'substep' namespace.");
+CREATE OR REPLACE FUNCTION map.meta()AS(STRUCT("Mapping: Lambdas and transformers for the 'substep' namespace." AS scope,"0.1.2" AS version,"https://github.com/dleeftink/substep" AS repo))OPTIONS(description="Lambdas and transformers for the 'substep' namespace.");
 
 -- Source: bq/try/_meta.sql
-CREATE OR REPLACE FUNCTION try.meta()AS(STRUCT("Testing: Dry-runs and unit tests for the 'substep' namespace." AS scope,"0.1.0" AS version,"https://github.com/dleeftink/substep" AS repo))OPTIONS(description="Dry-runs and unit tests for the 'substep' namespace.");
+CREATE OR REPLACE FUNCTION try.meta()AS(STRUCT("Testing: Dry-runs and unit tests for the 'substep' namespace." AS scope,"0.1.2" AS version,"https://github.com/dleeftink/substep" AS repo))OPTIONS(description="Dry-runs and unit tests for the 'substep' namespace.");
 
 -- Source: bq/use/_meta.sql
-CREATE OR REPLACE FUNCTION use.meta()AS(STRUCT("Tooling: Core functions for the 'substep' namespace." AS scope,"0.1.1" AS version,"https://github.com/dleeftink/substep" AS repo))OPTIONS(description="Core functions for the 'substep' namespace.");
+CREATE OR REPLACE FUNCTION use.meta()AS(STRUCT("Tooling: Core functions for the 'substep' namespace." AS scope,"0.1.2" AS version,"https://github.com/dleeftink/substep" AS repo))OPTIONS(description="Core functions for the 'substep' namespace.");
 
 -- CORE FUNCTIONS (DEPENDENCY ORDER)
 
