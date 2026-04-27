@@ -8,9 +8,11 @@ Reads SQL files, extracts function definitions and calls, builds a dependency gr
 import os
 import re
 import heapq
+import sys
 from collections import defaultdict
 
 def extract_functions_and_deps(sql_content, valid_namespaces):
+    """Extract definitions and deps, stripping comments/strings for accuracy."""
     # 1. Strip comments
     sql_content = re.sub(r'--.*', '', sql_content)
     sql_content = re.sub(r'/\*.*?\*/', '', sql_content, flags=re.DOTALL)
@@ -18,17 +20,16 @@ def extract_functions_and_deps(sql_content, valid_namespaces):
     # 2. Extract function definition
     def_pattern = r'create\s+(?:or\s+replace\s+)?(?:table\s+)?function\s+([`\w\.]+)'
     def_match = re.search(def_pattern, sql_content, re.IGNORECASE)
-    
     if not def_match:
         return None, set()
 
     current_func = def_match.group(1).lower().replace('`', '')
     
-    # 3. Strip strings to avoid dependencies inside descriptions/URLs
+    # 3. Strip strings (descriptions/options)
     sql_content = re.sub(r"'[^']*'", "''", sql_content)
     sql_content = re.sub(r'"[^"]*"', '""', sql_content)
 
-    # 4. Match calls using the namespace whitelist (e.g. cue., get., use.)
+    # 4. Match calls using the namespace whitelist
     ns_regex = '|'.join(map(re.escape, valid_namespaces))
     call_pattern = r'\b(' + ns_regex + r')\.([\w\-]+)(?!\w)'
 
@@ -43,16 +44,17 @@ def extract_functions_and_deps(sql_content, valid_namespaces):
 def main():
     bq_dir = "bq"
     if not os.path.exists(bq_dir):
+        print(f"Error: {bq_dir} not found", file=sys.stderr)
         return
 
-    # Whitelist namespaces based on top-level folders
     namespaces = [d.lower() for d in os.listdir(bq_dir) if os.path.isdir(os.path.join(bq_dir, d))]
     
-    graph = defaultdict(set)
+    graph = defaultdict(set)      # callee -> set of callers
     all_defined_funcs = set()
-    func_to_deps = {}
+    func_to_deps = {}             # caller -> set of callees
     func_to_path = {}
 
+    # Build the graph
     for root, _, files in os.walk(bq_dir):
         for file in files:
             if file.endswith('.sql'):
@@ -68,40 +70,58 @@ def main():
                     for dep in deps:
                         graph[dep].add(func)
 
-    # Topological Sort (Kahn's Algorithm)
+    # Prepare for Topological Sort
     in_degree = {f: 0 for f in all_defined_funcs}
     clean_graph = defaultdict(set)
+    
     for caller, deps in func_to_deps.items():
         for dep in deps:
             if dep in all_defined_funcs:
                 clean_graph[dep].add(caller)
                 in_degree[caller] += 1
 
-    # Alphabetical tie-breaking via heap
-    queue = [f for f in all_defined_funcs if in_degree[f] == 0]
+    # Out-degree: How many functions depend on this one? 
+    # High out-degree = "High priority" utility function.
+    out_degree = {f: len(clean_graph[f]) for f in all_defined_funcs}
+
+    # Heap contains (-out_degree, function_name)
+    # Negative out_degree ensures the highest count comes off the heap first.
+    queue = [(-out_degree[f], f) for f in all_defined_funcs if in_degree[f] == 0]
     heapq.heapify(queue)
     
     install_order = []
+    
+    # Audit log to stderr
+    print("Dependency graph:", file=sys.stderr)
+    for func in sorted(all_defined_funcs):
+        internal_deps = sorted([d for d in func_to_deps[func] if d in all_defined_funcs])
+        if internal_deps:
+            print(f"  {func} depends on: {internal_deps}", file=sys.stderr)
+    print("", file=sys.stderr)
+
     while queue:
-        curr = heapq.heappop(queue)
+        priority, curr = heapq.heappop(queue)
         install_order.append(curr)
+        
         for neighbor in clean_graph[curr]:
             in_degree[neighbor] -= 1
             if in_degree[neighbor] == 0:
-                heapq.heappush(queue, neighbor)
+                # Add to queue with its priority
+                heapq.heappush(queue, (-out_degree[neighbor], neighbor))
 
     # Output paths to stdout for Bash
     if len(install_order) == len(all_defined_funcs):
+        print("Topological order (Priority: Out-Degree):", file=sys.stderr)
         for func in install_order:
+            print(f"  {func} (weight: {out_degree[func]})", file=sys.stderr)
             print(func_to_path[func])
     else:
-        # Error to stderr so it doesn't pollute the file list
-        import sys
         stuck = all_defined_funcs - set(install_order)
-        print("--- UNRESOLVED DEPENDENCIES ---", file=sys.stderr)
+        print("\n--- ERROR: CYCLE OR MISSING DEPS ---", file=sys.stderr)
         for f in sorted(stuck):
             blocking = [d for d in func_to_deps[f] if d in all_defined_funcs and d not in install_order]
-            print(f"{f} is waiting for: {blocking}", file=sys.stderr)
+            print(f"  {f} is waiting for: {blocking}", file=sys.stderr)
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
