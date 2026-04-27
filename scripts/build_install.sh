@@ -27,7 +27,7 @@ echo "-- ==========================================" >> "$OUTPUT_FILE"
 grep "_meta.sql" "$PATHS_FILE" | while read -r file_path; do
     echo -e "\n-- Source: $file_path" >> "$OUTPUT_FILE"
     cat "$file_path" >> "$OUTPUT_FILE"
-    echo -e "\n" >> "$OUTPUT_FILE"
+    echo -e "" >> "$OUTPUT_FILE"
 done
 
 # 2. Process Core functions (everything else)

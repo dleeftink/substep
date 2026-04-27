@@ -13,7 +13,6 @@ CREATE OR REPLACE FUNCTION cue.meta() AS (STRUCT(
   description = "Type checkers and initialisers for the 'subtype' namespace."
 );
 
-
 -- Source: bq/def/_meta.sql
 CREATE OR REPLACE FUNCTION def.meta() AS (STRUCT(
   "Contracts: Schema defaults and API definitions for the 'substep' namespace." AS scope,
@@ -22,8 +21,6 @@ CREATE OR REPLACE FUNCTION def.meta() AS (STRUCT(
 )) OPTIONS (
   description = "Schema defaults and API definitions for the 'substep' namespace."
 );
-
-
 
 -- Source: bq/fix/_meta.sql
 CREATE OR REPLACE FUNCTION fix.meta() AS (STRUCT(
@@ -34,8 +31,6 @@ CREATE OR REPLACE FUNCTION fix.meta() AS (STRUCT(
   description = "Patchers an correctors for the 'substep' namespace."
 );
 
-
-
 -- Source: bq/get/_meta.sql
 CREATE OR REPLACE FUNCTION get.meta() AS (STRUCT(
   "Extraction: Parsers and extractors for the 'substep' namespace." AS scope,
@@ -44,8 +39,6 @@ CREATE OR REPLACE FUNCTION get.meta() AS (STRUCT(
 )) OPTIONS (
   description = "Parsers and extractors for the 'substep' namespace."
 );
-
-
 
 -- Source: bq/lay/_meta.sql
 CREATE OR REPLACE FUNCTION lay.meta() AS (STRUCT(
@@ -56,8 +49,6 @@ CREATE OR REPLACE FUNCTION lay.meta() AS (STRUCT(
   description = "Formatters and layouters for the 'substep' namespace."
 );
 
-
-
 -- Source: bq/map/_meta.sql
 CREATE OR REPLACE FUNCTION map.meta() AS (STRUCT(
   "Mapping: Lambdas and transformers for the 'substep' namespace." AS scope,
@@ -66,7 +57,6 @@ CREATE OR REPLACE FUNCTION map.meta() AS (STRUCT(
 )) OPTIONS (
   description = "Lambdas and transformers for the 'substep' namespace."
 );
-
 
 -- Source: bq/try/_meta.sql
 CREATE OR REPLACE FUNCTION try.meta() AS (STRUCT(
@@ -77,8 +67,6 @@ CREATE OR REPLACE FUNCTION try.meta() AS (STRUCT(
   description = "Dry-runs and unit tests for the 'substep' namespace."
 );
 
-
-
 -- Source: bq/use/_meta.sql
 CREATE OR REPLACE FUNCTION use.meta() AS (STRUCT(
   "Tooling: Core functions for the 'substep' namespace." AS scope,
@@ -87,8 +75,6 @@ CREATE OR REPLACE FUNCTION use.meta() AS (STRUCT(
 )) OPTIONS (
   description = "Core functions for the 'substep' namespace."
 );
-
-
 
 -- ==========================================
 -- CORE FUNCTIONS (DEPENDENCY ORDER)
