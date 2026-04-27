@@ -1,7 +1,7 @@
 create or replace function use.parser(object ANY TYPE, maxDepth INT) as ((
 
   with safe as (
-    select get.safeJson(object) as jsn,[('[',']'),('{','}')] as pairs
+    select get.safeJson(object) as jsn,[('[',']'),('{','}')] as pairs -- pairs' is for tracking array and object contexts during parsing
   ),
 
   main as (
