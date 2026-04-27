@@ -1,11 +1,11 @@
-create or replace function get.objectMetadata(a INT, b INT, pack ANY TYPE, jsn STRING) as ((
+create or replace function get.jsonObjectMetadata(a INT, b INT, pack ANY TYPE, jsn STRING) as ((
 
   with init as (
 
     from unnest(pack) as obj
     |> aggregate min_by(obj,pin) head,max_by(obj,pin) tail group by slot,raise
-    |> extend get.nearestJsonKeyIndex(jsn,head.idx) as kpos
-    |> select cue.objectMetadataInterface(a,b,jsn,head,tail,slot,kpos).*
+    |> extend get.jsonKeyIndex(jsn,head.idx) as kpos
+    |> select cue.jsonObjectInterface(a,b,jsn,head,tail,slot,kpos).*
     
   ),
   
@@ -21,7 +21,7 @@ create or replace function get.objectMetadata(a INT, b INT, pack ANY TYPE, jsn S
   keys as (
 
     from syms       
-    |> set key = fix.keyFragment(key)
+    |> set key = fix.jsonKeyFragment(key)
     |> set key = if(key='#',(json).translate('{}"','').split(':')[safe_offset(0)],key), sym = if(key='#',key,sym)
     |> set key = coalesce(key,last_value(if(not raise,key,null) ignore nulls) over(partition by depth order by open))
 

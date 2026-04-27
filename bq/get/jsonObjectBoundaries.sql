@@ -1,4 +1,4 @@
-create or replace table function get.objectBoundaries(input table <idx INT, sub STRING, pre INT, depth INT, depths array<INT>, raise BOOL>, jsn STRING, pick INT) as ( 
+create or replace table function get.jsonObjectBoundaries(input table <idx INT, sub STRING, pre INT, depth INT, depths array<INT>, raise BOOL>, jsn STRING, pick INT) as ( 
 
    with init as (
     select * replace(
@@ -13,7 +13,7 @@ create or replace table function get.objectBoundaries(input table <idx INT, sub 
     )
   )
 
-  select get.objectMetadata(a,b,array_concat_agg(  
+  select get.jsonObjectMetadata(a,b,array_concat_agg(  
     array(select as struct slot,* except(slot) from unnest(subs) with offset as slot )    
   ),jsn) as level from init group by a,b having a < pick + 0 order by a,b
   

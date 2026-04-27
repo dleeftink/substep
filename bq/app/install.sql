@@ -79,8 +79,8 @@ CREATE OR REPLACE FUNCTION get.meta() AS (STRUCT(
 
 # Core functions (in dependency order)
 
--- fix.unsafeJson
-create or replace function fix.unsafeJson(str STRING, esc BOOL) AS (
+-- fix.jsonSafeGuards
+create or replace function fix.jsonSafeGuards(str STRING, esc BOOL) AS (
   (str)
   -- 1. JSON Structural Elements (Highest Priority)
   .REPLACE('{', IF(esc, '\x1C', '\\{')) -- FS: File Separator (Object Open)
@@ -103,8 +103,15 @@ create or replace function fix.unsafeJson(str STRING, esc BOOL) AS (
   description = "Escapes JSON delimiters using control characters or backslashes to prevent parsing collisions."
 );
 
--- fix.emptyJsonKeys
-create or replace function fix.emptyJsonKeys(jsn STRING) as (
+-- fix.jsonPrimitives
+create or replace function fix.jsonPrimitives(jsn STRING) as (
+  (jsn).regexp_replace(r'((?:"[^"]*"|[^:,{}]*)\s*:\s*(?:"[^"]*"|[\d\.]+|true|false|null))',r'"#":{\1},"#":#')
+) OPTIONS (
+  description = "Wraps shallow JSON key/value pairs with temporary object boundaries."
+);
+
+-- fix.jsonTuples
+create or replace function fix.jsonTuples(jsn STRING) as (
   (jsn)
     .regexp_replace(r'""\:([^\{\}\[\]]*?)\,""\:([^\{\}\[\]]*?)',r'\1:\2')  -- move quoted keys/values into empty key position and mark insertion point
     .regexp_replace(r'([\{\,])\s*([^"\:\{\[\]\}\s]+)(\s*\:)',  r'\1"\2"\3') -- handle unquoted keys
@@ -114,15 +121,8 @@ create or replace function fix.emptyJsonKeys(jsn STRING) as (
   description = "Resolves empty:non-empty key/value sequences resulting from SQL-to-JSON conversion."
 );
 
--- fix.shallowItems
-create or replace function fix.shallowItems(jsn STRING) as (
-  (jsn).regexp_replace(r'((?:"[^"]*"|[^:,{}]*)\s*:\s*(?:"[^"]*"|[\d\.]+|true|false|null))',r'"#":{\1},"#":#')
-) OPTIONS (
-  description = "Wraps shallow JSON key/value pairs with temporary object boundaries."
-);
-
--- get.stringifiedJsonFromStruct
-create or replace function get.stringifiedJsonFromStruct(object ANY TYPE) as ((
+-- get.jsonStringFromStruct
+create or replace function get.jsonStringFromStruct(object ANY TYPE) as ((
 
   with list as (
   
@@ -148,15 +148,15 @@ create or replace function get.stringifiedJsonFromStruct(object ANY TYPE) as ((
   description = "Serializes a SQL struct to JSON while preserving literal source values."
 );
 
--- lay.shallowItems
-create or replace function lay.shallowItems(jsn STRING) as (
+-- lay.jsonPrimitives
+create or replace function lay.jsonPrimitives(jsn STRING) as (
   (jsn).replace('"#":{','').replace('},"#":#','')
 ) OPTIONS (
   description = "Removes temporary object boundaries from nested JSON items."
 );
 
--- lay.unsafeJson
-create or replace function lay.unsafeJson(str STRING) AS (
+-- lay.jsonSafeGuards
+create or replace function lay.jsonSafeGuards(str STRING) AS (
   (str)
   -- 1. JSON Structural Elements (Highest Priority)
   .REPLACE('\x1C','{') -- FS: File Separator (Object Open)
@@ -180,11 +180,11 @@ create or replace function lay.unsafeJson(str STRING) AS (
   description = "Restores control-character markers back to their literal characters."
 );
 
--- map.unsafeJson
-create or replace function map.unsafeJson(jsn STRING, esc BOOL) AS ((
+-- map.jsonSafeGuards
+create or replace function map.jsonSafeGuards(jsn STRING, esc BOOL) AS ((
   select string_agg(if(
     (str).starts_with("\x0F"),
-      (str).replace("\x0F",'').(fix.unsafeJson)(esc),str),'' order by idx  --> make sure you don't accidentally replace 'safe' \x0F byte markers...
+      (str).replace("\x0F",'').(fix.jsonSafeGuards)(esc),str),'' order by idx  --> make sure you don't accidentally replace 'safe' \x0F byte markers...
   )  from (
     select (jsn).REPLACE('\\"', if(esc,'\x05','\\“')) -- replace double quote with curly quote “ if esc = false (for debugging)
       .regexp_replace(r'"([^"]*)"', 
@@ -201,7 +201,7 @@ create or replace function use.unroller(jsn STRING, pairs array<struct<open STRI
   with init as (
     from get.characterIndices(jsn,(select concat('[',string_agg(concat('\\', pair.open,'\\',pair.close),''),']') from unnest(pairs) pair))
     |> call map.objectContainment(pairs)
-    |> call get.objectBoundaries(jsn,pick)
+    |> call get.jsonObjectBoundaries(jsn,pick)
     |> select level.*
   ),
 
@@ -238,33 +238,33 @@ create or replace function use.unroller(jsn STRING, pairs array<struct<open STRI
   description = "Unrolls a JSON string into a linked parent-child list with structural metadata."
 );
 
--- cue.objectMetadataInterface
-create or replace function cue.objectMetadataInterface(a INT, b INT, jsn STRING, head ANY TYPE, tail ANY TYPE, slot INT, kpos INT) as (
+-- cue.jsonObjectInterface
+create or replace function cue.jsonObjectInterface(a INT, b INT, jsn STRING, head ANY TYPE, tail ANY TYPE, slot INT, kpos INT) as (
   struct(
     head.raise,b as depth,slot,a as pre,head.idx as open,tail.idx as close,kpos,head.nest,
-    get.keyFragment(jsn,head.idx,kpos) as key,null as arr_sym,null as arr_ctx,null as ord,null as sym, 
-    get.objectFragment(jsn,head.idx,tail.idx) as json, null as acid,null as ocid,null as ecid,false as list --> acid: array container id / ocid: object container id / ecid: element container id
+    get.jsonKeyFragment(jsn,head.idx,kpos) as key,null as arr_sym,null as arr_ctx,null as ord,null as sym, 
+    get.jsonObjectFragment(jsn,head.idx,tail.idx) as json, null as acid,null as ocid,null as ecid,false as list --> acid: array container id / ocid: object container id / ecid: element container id
   )
 ) OPTIONS (
-  description = "Defines the internal `get.objectMetadata()` interface."
+  description = "Defines the internal `get.jsonObjectMetadata()` interface."
 );
 
--- fix.keyFragment
-create or replace function fix.keyFragment(key STRING) as (
+-- fix.jsonKeyFragment
+create or replace function fix.jsonKeyFragment(key STRING) as (
   (key).regexp_replace(r'[\{\[]+','').nullif('').rtrim(':').split(':').array_last().replace('"','')
 ) OPTIONS (
   description = "Normalizes a key string by removing padding and structural artifacts."
-);
+);s
 
--- get.keyFragment
-create or replace function get.keyFragment(jsn STRING,open INT, keypos INT) as (
+-- get.jsonKeyFragment
+create or replace function get.jsonKeyFragment(jsn STRING,open INT, keypos INT) as (
   (jsn).substring(keypos+1,greatest(0,open-keypos-0)).ltrim(' ') 
 ) OPTIONS (
   description = "Extracts a JSON key segment based on open and closing positions."
 );
 
--- get.nearestJsonKeyIndex
-create or replace function get.nearestJsonKeyIndex(jsn STRING,idx INT) as (
+-- get.jsonKeyIndex
+create or replace function get.jsonKeyIndex(jsn STRING,idx INT) as (
   coalesce(
     NULLIF(INSTR(jsn, ',', -1 * (LENGTH(jsn) - idx + 2)), 0),
     NULLIF(INSTR(jsn, '[', -1 * (LENGTH(jsn) - idx + 3)), 0),
@@ -274,22 +274,22 @@ create or replace function get.nearestJsonKeyIndex(jsn STRING,idx INT) as (
   description = "Locates a nearest key-like string based on structural boundaries preceding a JSON index."
 );
 
--- get.objectFragment
-create or replace function get.objectFragment(jsn STRING, open INT, close INT) as (
-  (jsn).substr(open,close-open+1).(lay.shallowItems)()
+-- get.jsonObjectFragment
+create or replace function get.jsonObjectFragment(jsn STRING, open INT, close INT) as (
+  (jsn).substr(open,close-open+1).(lay.jsonPrimitives)()
 ) OPTIONS (
   description = "Extracts a specific JSON object fragment and removes temporary structural boundaries."
 );
 
--- get.objectMetadata
-create or replace function get.objectMetadata(a INT, b INT, pack ANY TYPE, jsn STRING) as ((
+-- get.jsonObjectMetadata
+create or replace function get.jsonObjectMetadata(a INT, b INT, pack ANY TYPE, jsn STRING) as ((
 
   with init as (
 
     from unnest(pack) as obj
     |> aggregate min_by(obj,pin) head,max_by(obj,pin) tail group by slot,raise
-    |> extend get.nearestJsonKeyIndex(jsn,head.idx) as kpos
-    |> select cue.objectMetadataInterface(a,b,jsn,head,tail,slot,kpos).*
+    |> extend get.jsonKeyIndex(jsn,head.idx) as kpos
+    |> select cue.jsonObjectInterface(a,b,jsn,head,tail,slot,kpos).*
     
   ),
   
@@ -305,7 +305,7 @@ create or replace function get.objectMetadata(a INT, b INT, pack ANY TYPE, jsn S
   keys as (
 
     from syms       
-    |> set key = fix.keyFragment(key)
+    |> set key = fix.jsonKeyFragment(key)
     |> set key = if(key='#',(json).translate('{}"','').split(':')[safe_offset(0)],key), sym = if(key='#',key,sym)
     |> set key = coalesce(key,last_value(if(not raise,key,null) ignore nulls) over(partition by depth order by open))
 
@@ -349,16 +349,16 @@ create or replace function get.objectMetadata(a INT, b INT, pack ANY TYPE, jsn S
   description = "Generates structural metadata and relational identifiers for packed JSON objects."
 );
 
--- get.safeJson
-create or replace function get.safeJson(object ANY TYPE) as (
-  (object).(get.stringifiedJsonFromStruct)().(map.unsafeJson)(true).(fix.emptyJsonKeys)() 
+-- get.jsonStringMask
+create or replace function get.jsonStringMask(object ANY TYPE) as (
+  (object).(get.jsonStringFromStruct)().(map.jsonSafeGuards)(true).(fix.jsonTuples)()
 ) OPTIONS (
   description = "Serializes a SQL struct to JSON and applies control-character escaping for structural safety."
 );
 
 -- get.unrolled
 create or replace function get.unrolled(jsn STRING, pairs array<struct<open STRING, close STRING>>, upto INT) as (
-  (jsn).(fix.shallowItems)().(use.unroller)(pairs,upto)
+  (jsn).(fix.jsonPrimitives)().(use.unroller)(pairs,upto)
 ) OPTIONS (
   description = "Returns an unrolled JSON string consisting of tuples or (nested) key/value pairs up to a chosen depth."
 );
@@ -367,14 +367,14 @@ create or replace function get.unrolled(jsn STRING, pairs array<struct<open STRI
 create or replace function use.parser(object ANY TYPE, maxDepth INT) as ((
 
   with safe as (
-    select get.safeJson(object) as jsn,[('[',']'),('{','}')] as pairs -- pairs' is for tracking array and object contexts during parsing
+    select get.jsonStringMask(object) as jsn, [('[',']'),('{','}')] as pairs -- pairs' is for tracking array and object contexts during parsing
   ),
 
   main as (
 
     select jsn as str,array(
       select as struct * replace(array(
-        select as struct * replace((json).(lay.unsafeJson)().(safe.parse_json)() as json) 
+        select as struct * replace((json).(lay.jsonSafeGuards)().(safe.parse_json)() as json) 
         from unnest(level.children)) as children
       ) from unnest(get.unrolled(jsn,pairs,maxDepth)) level
     ) levels, (jsn).starts_with('[{') or (jsn).starts_with('[[') is_array_root 

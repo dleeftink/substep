@@ -1,4 +1,4 @@
-create or replace function fix.emptyJsonKeys(jsn STRING) as (
+create or replace function fix.jsonTuples(jsn STRING) as (
   (jsn)
     .regexp_replace(r'""\:([^\{\}\[\]]*?)\,""\:([^\{\}\[\]]*?)',r'\1:\2')  -- move quoted keys/values into empty key position and mark insertion point
     .regexp_replace(r'([\{\,])\s*([^"\:\{\[\]\}\s]+)(\s*\:)',  r'\1"\2"\3') -- handle unquoted keys

@@ -1,14 +1,14 @@
 create or replace function use.parser(object ANY TYPE, maxDepth INT) as ((
 
   with safe as (
-    select get.safeJson(object) as jsn,[('[',']'),('{','}')] as pairs -- pairs' is for tracking array and object contexts during parsing
+    select get.jsonStringMask(object) as jsn, [('[',']'),('{','}')] as pairs -- pairs' is for tracking array and object contexts during parsing
   ),
 
   main as (
 
     select jsn as str,array(
       select as struct * replace(array(
-        select as struct * replace((json).(lay.unsafeJson)().(safe.parse_json)() as json) 
+        select as struct * replace((json).(lay.jsonSafeGuards)().(safe.parse_json)() as json) 
         from unnest(level.children)) as children
       ) from unnest(get.unrolled(jsn,pairs,maxDepth)) level
     ) levels, (jsn).starts_with('[{') or (jsn).starts_with('[[') is_array_root 

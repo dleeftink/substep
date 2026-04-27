@@ -1,30 +1,30 @@
 Dependency graph:
-fix.emptyJsonKeys: ['def.meta', 'get.safeJson']
-fix.shallowItems: ['def.meta', 'get.unrolled']
-fix.unsafeJson: ['def.meta', 'map.unsafeJson']
-get.stringifiedJsonFromStruct: ['def.meta', 'get.safeJson']
-lay.shallowItems: ['def.meta', 'get.objectFragment']
-lay.unsafeJson: ['def.meta', 'use.parser']
-map.unsafeJson: ['def.meta', 'get.safeJson']
+fix.jsonPrimitives: ['def.meta', 'get.unrolled']
+fix.jsonSafeGuards: ['def.meta', 'map.jsonSafeGuards']
+fix.jsonTuples: ['def.meta', 'get.jsonStringMask']
+get.jsonStringFromStruct: ['def.meta', 'get.jsonStringMask']
+lay.jsonPrimitives: ['def.meta', 'get.jsonObjectFragment']
+lay.jsonSafeGuards: ['def.meta', 'use.parser']
+map.jsonSafeGuards: ['def.meta', 'get.jsonStringMask']
 safe.parse_json: ['def.meta', 'use.parser']
 use.unroller: ['def.meta', 'get.unrolled']
 
 Topological order (by dependency depth):
-fix.unsafeJson
-fix.emptyJsonKeys
-fix.shallowItems
-get.stringifiedJsonFromStruct
-lay.shallowItems
-lay.unsafeJson
-map.unsafeJson
+fix.jsonSafeGuards
+fix.jsonPrimitives
+fix.jsonTuples
+get.jsonStringFromStruct
+lay.jsonPrimitives
+lay.jsonSafeGuards
+map.jsonSafeGuards
 safe.parse_json
 use.unroller
-cue.objectMetadataInterface
-fix.keyFragment
-get.keyFragment
-get.nearestJsonKeyIndex
-get.objectFragment
-get.objectMetadata
-get.safeJson
+cue.jsonObjectInterface
+fix.jsonKeyFragment
+get.jsonKeyFragment
+get.jsonKeyIndex
+get.jsonObjectFragment
+get.jsonObjectMetadata
+get.jsonStringMask
 get.unrolled
 use.parser
