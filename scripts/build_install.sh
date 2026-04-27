@@ -8,7 +8,6 @@ mkdir -p bq/app
 echo "-- Generated BigQuery Install Script" > "$OUTPUT_FILE"
 
 # Run Python script to get sorted file paths
-# Stores results in a temporary file
 PATHS_FILE=$(mktemp)
 python3 scripts/topo_sort.py > "$PATHS_FILE"
 
@@ -19,30 +18,38 @@ if [ ! -s "$PATHS_FILE" ]; then
     exit 1
 fi
 
-# 1. Process Meta functions first (priority)
+# Function to strip comments and append
+append_clean_sql() {
+    local file_path=$1
+    echo -e "\n-- Source: $file_path" >> "$OUTPUT_FILE"
+    
+    # 1. Perl strips multi-line /* */ and single-line -- comments
+    # 2. We then trim trailing whitespace/semicolons and add exactly ONE semicolon
+    perl -0777 -pe 's/\/\*.*?\*\///gs; s/--.*//g' "$file_path" | \
+    sed -e 's/[[:space:];]*$//' >> "$OUTPUT_FILE"
+    
+    echo -e ";" >> "$OUTPUT_FILE"
+}
+
+# 1. Process Meta functions first
 echo -e "\n-- ==========================================" >> "$OUTPUT_FILE"
 echo "-- META FUNCTIONS" >> "$OUTPUT_FILE"
 echo "-- ==========================================" >> "$OUTPUT_FILE"
 
 grep "_meta.sql" "$PATHS_FILE" | while read -r file_path; do
-    echo -e "\n-- Source: $file_path" >> "$OUTPUT_FILE"
-    cat "$file_path" >> "$OUTPUT_FILE"
-    echo -e "" >> "$OUTPUT_FILE"
+    append_clean_sql "$file_path"
 done
 
-# 2. Process Core functions (everything else)
+# 2. Process Core functions
 echo -e "\n-- ==========================================" >> "$OUTPUT_FILE"
 echo "-- CORE FUNCTIONS (DEPENDENCY ORDER)" >> "$OUTPUT_FILE"
 echo -e "-- ==========================================\n" >> "$OUTPUT_FILE"
 
 grep -v "_meta.sql" "$PATHS_FILE" | while read -r file_path; do
-    echo "-- Source: $file_path" >> "$OUTPUT_FILE"
-    cat "$file_path" >> "$OUTPUT_FILE"
-    echo -e "\n" >> "$OUTPUT_FILE"
+    append_clean_sql "$file_path"
 done
 
 # Cleanup
 rm "$PATHS_FILE"
 
 echo "Install file generated: $OUTPUT_FILE"
-echo "To install: bq query --use_legacy_sql=false < $OUTPUT_FILE"
