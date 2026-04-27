@@ -29,12 +29,12 @@ use.meta
 use.parser
 
 Dependencies:
-cue.jsonObjectInterface: get.jsonKeyFragment, get.jsonObjectFragment
-get.jsonObjectBoundaries: get.jsonObjectMetadata
-get.jsonObjectFragment: lay.jsonPrimitives
-get.jsonObjectMetadata: cue.jsonObjectInterface, fix.jsonKeyFragment, get.jsonKeyIndex
-get.jsonStringMask: fix.jsonTuples, get.jsonStringFromStruct, map.jsonSafeGuards
-get.unrolled: fix.jsonPrimitives, use.unroller
-map.jsonSafeGuards: fix.jsonSafeGuards
-use.parser: get.jsonStringMask, get.unrolled, lay.jsonSafeGuards
-use.unroller: get.characterIndices, get.jsonObjectBoundaries, map.objectContainment
+cue.jsonObjectInterface: ["get.jsonKeyFragment", "get.jsonObjectFragment"]
+get.jsonObjectBoundaries: ["get.jsonObjectMetadata"]
+get.jsonObjectFragment: ["lay.jsonPrimitives"]
+get.jsonObjectMetadata: ["cue.jsonObjectInterface", "fix.jsonKeyFragment", "get.jsonKeyIndex"]
+get.jsonStringMask: ["fix.jsonTuples", "get.jsonStringFromStruct", "map.jsonSafeGuards"]
+get.unrolled: ["fix.jsonPrimitives", "use.unroller"]
+map.jsonSafeGuards: ["fix.jsonSafeGuards"]
+use.parser: ["get.jsonStringMask", "get.unrolled", "lay.jsonSafeGuards"]
+use.unroller: ["get.characterIndices", "get.jsonObjectBoundaries", "map.objectContainment"]

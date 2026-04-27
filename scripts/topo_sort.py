@@ -130,7 +130,7 @@ def main():
                 deps = sorted([d for d in func_to_deps[func] if d in all_defined_funcs])
                 if deps:
                     dep_names = [func_to_original[d] for d in deps]
-                    f.write(f"{func_to_original[func]}: {', '.join(dep_names)}\n")
+                    f.write(f"{func_to_original[func]}: [{', '.join(f'\"{d}\"' for d in dep_names)}]\n")
     else:
         stuck = all_defined_funcs - set(install_order)
         print("\n--- ERROR: CYCLE OR MISSING DEPS ---", file=sys.stderr)
