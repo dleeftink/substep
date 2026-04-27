@@ -2,8 +2,24 @@
 # Concatenates SQL files in topological order for BigQuery installation
 
 OUTPUT_FILE="bq/app/install.sql"
-MINIFY=true
+MINIFY=false # Default to false for safer debugging
 mkdir -p bq/app
+
+# Parse CLI arguments
+while [[ "$#" -gt 0 ]]; do
+    case $1 in
+        -m|--minify) MINIFY=true ;;
+        -h|--help) 
+            echo "Usage: $0 [options]"
+            echo "Options:"
+            echo "  -m, --minify    Enable SQL minification (string-safe)"
+            echo "  -h, --help      Show this help menu"
+            exit 0
+            ;;
+        *) echo "Unknown parameter passed: $1"; exit 1 ;;
+    esac
+    shift
+done
 
 # Clear and initialize output file
 echo "-- Generated BigQuery Install Script" > "$OUTPUT_FILE"
@@ -25,9 +41,6 @@ append_clean_sql() {
     
     if [ "$MINIFY" = true ]; then
         # MINIFICATION WITH STRING PROTECTION:
-        # 1. Strip comments first
-        # 2. Match 'strings' or "strings" and skip them (*SKIP)(*F)
-        # 3. On everything else: collapse whitespace and trim around operators
         perl -0777 -pe '
             s/\/\*.*?\*\///gs; 
             s/--.*//g;
@@ -36,6 +49,7 @@ append_clean_sql() {
             s/;\s*$//;
         ' "$file_path" >> "$OUTPUT_FILE"
     else
+        # Just strip comments and trailing semicolons
         perl -0777 -pe 's/\/\*.*?\*\///gs; s/--.*//g' "$file_path" | \
         sed -e 's/[[:space:];]*$//' >> "$OUTPUT_FILE"
     fi
