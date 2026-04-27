@@ -6,6 +6,7 @@ Reads SQL files, extracts function definitions and calls, builds a dependency gr
 
 import os
 import re
+import heapq
 from collections import defaultdict, deque
 
 def extract_functions_and_deps(sql_content):
@@ -30,23 +31,49 @@ def extract_functions_and_deps(sql_content):
     
     return functions, deps
 
-def topological_sort(graph):
-    """Perform topological sort using Kahn's algorithm."""
+def compute_depth(func, graph, memo=None):
+    """Compute the maximum dependency depth for a function."""
+    if memo is None:
+        memo = {}
+    
+    if func in memo:
+        return memo[func]
+    
+    if func not in graph or not graph[func]:
+        memo[func] = 0
+        return 0
+    
+    max_depth = 0
+    for dep in graph[func]:
+        max_depth = max(max_depth, 1 + compute_depth(dep, graph, memo))
+    
+    memo[func] = max_depth
+    return max_depth
+
+def topological_sort_with_depth(graph):
+    """Perform topological sort, breaking ties by dependency depth."""
     in_degree = {node: 0 for node in graph}
     for node in graph:
         for dep in graph[node]:
             in_degree[dep] += 1
     
-    queue = deque([node for node in in_degree if in_degree[node] == 0])
+    # Compute depth for all nodes
+    depths = {}
+    for node in graph:
+        depths[node] = compute_depth(node, graph)
+    
+    queue = [(- depths[node], node) for node in in_degree if in_degree[node] == 0]
+    import heapq
+    heapq.heapify(queue)
     result = []
     
     while queue:
-        node = queue.popleft()
+        _, node = heapq.heappop(queue)
         result.append(node)
         for neighbor in graph.get(node, []):
             in_degree[neighbor] -= 1
             if in_degree[neighbor] == 0:
-                queue.append(neighbor)
+                heapq.heappush(queue, (- depths[neighbor], neighbor))
     
     if len(result) != len(graph):
         raise ValueError("Cycle detected in dependencies")
@@ -87,8 +114,8 @@ def main():
             print(f"{func}: {sorted(deps)}")
     
     try:
-        order = topological_sort(graph)
-        print("\nTopological order:")
+        order = topological_sort_with_depth(graph)
+        print("\nTopological order (by dependency depth):")
         print("\n".join(order))
     except ValueError as e:
         print(f"Error: {e}")

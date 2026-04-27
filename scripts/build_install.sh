@@ -2,8 +2,11 @@
 # Install script for substep BigQuery functions
 # Concatenates SQL files in topological dependency order
 
-OUTPUT_FILE="bq/install.sql"
-ORDER_FILE="bq/install-order.txt"
+OUTPUT_FILE="bq/app/install.sql"
+ORDER_FILE="bq/app/install-order.txt"
+
+# Ensure output directory exists
+mkdir -p bq/app
 
 # Generate topological order (excluding meta functions, as they go first)
 python3 scripts/topo_sort.py | grep -v '\.meta$' > "$ORDER_FILE"
@@ -13,6 +16,7 @@ echo "# Meta functions (no dependencies)" > "$OUTPUT_FILE"
 for meta in def.meta lay.meta fix.meta cue.meta map.meta try.meta use.meta get.meta; do
   FILE_PATH=$(find bq -name "_meta.sql" -path "*/${meta%.*}/*" | head -1)
   if [ -f "$FILE_PATH" ]; then
+    echo "" >> "$OUTPUT_FILE"
     echo "-- $meta" >> "$OUTPUT_FILE"
     cat "$FILE_PATH" >> "$OUTPUT_FILE"
     echo "" >> "$OUTPUT_FILE"
@@ -27,6 +31,7 @@ while IFS= read -r func; do
   name=${func#*.}
   FILE_PATH="bq/$namespace/$name.sql"
   if [ -f "$FILE_PATH" ]; then
+    echo "" >> "$OUTPUT_FILE"
     echo "-- $func" >> "$OUTPUT_FILE"
     cat "$FILE_PATH" >> "$OUTPUT_FILE"
     echo "" >> "$OUTPUT_FILE"
