@@ -1,42 +1,57 @@
 #!/bin/bash
-# Install script for substep BigQuery functions
-# Concatenates SQL files in topological dependency order
+# Concatenates SQL files in topological order for BigQuery installation
 
 OUTPUT_FILE="bq/app/install.sql"
-ORDER_FILE="bq/app/install-order.txt"
-
-# Ensure output directory exists
+MINIFY=true
 mkdir -p bq/app
 
-# Generate topological order (excluding meta functions, as they go first)
-python3 scripts/topo_sort.py | grep -v '\.meta$' > "$ORDER_FILE"
+# Clear and initialize output file
+echo "-- Generated BigQuery Install Script" > "$OUTPUT_FILE"
 
-# Add meta functions first
-echo "# Meta functions (no dependencies)" > "$OUTPUT_FILE"
-for meta in def.meta lay.meta fix.meta cue.meta map.meta try.meta use.meta get.meta; do
-  FILE_PATH=$(find bq -name "_meta.sql" -path "*/${meta%.*}/*" | head -1)
-  if [ -f "$FILE_PATH" ]; then
-    echo "" >> "$OUTPUT_FILE"
-    echo "-- $meta" >> "$OUTPUT_FILE"
-    cat "$FILE_PATH" >> "$OUTPUT_FILE"
-    echo "" >> "$OUTPUT_FILE"
-  fi
+# Run Python script to get sorted file paths
+PATHS_FILE=$(mktemp)
+python3 scripts/topo_sort.py > "$PATHS_FILE"
+
+if [ ! -s "$PATHS_FILE" ]; then
+    echo "Error: Topological sort failed or returned no files."
+    rm "$PATHS_FILE"
+    exit 1
+fi
+
+# Function to clean, minify, and append
+append_clean_sql() {
+    local file_path=$1
+    echo -e "\n-- Source: $file_path" >> "$OUTPUT_FILE"
+    
+    if [ "$MINIFY" = true ]; then
+        # MINIFICATION WITH STRING PROTECTION:
+        # 1. Strip comments first
+        # 2. Match 'strings' or "strings" and skip them (*SKIP)(*F)
+        # 3. On everything else: collapse whitespace and trim around operators
+        perl -0777 -pe '
+            s/\/\*.*?\*\///gs; 
+            s/--.*//g;
+            s/(["\x27])(?:\\.|(?!\1).)*\1(*SKIP)(*F)|(?:\s+)/ /g;
+            s/(["\x27])(?:\\.|(?!\1).)*\1(*SKIP)(*F)|\s*([,()=+\-*\/])\s*/$2/g;
+            s/;\s*$//;
+        ' "$file_path" >> "$OUTPUT_FILE"
+    else
+        perl -0777 -pe 's/\/\*.*?\*\///gs; s/--.*//g' "$file_path" | \
+        sed -e 's/[[:space:];]*$//' >> "$OUTPUT_FILE"
+    fi
+    
+    echo -e ";" >> "$OUTPUT_FILE"
+}
+
+echo -e "\n-- META FUNCTIONS" >> "$OUTPUT_FILE"
+grep "_meta.sql" "$PATHS_FILE" | while read -r file_path; do
+    append_clean_sql "$file_path"
 done
 
-# Add remaining functions in topological order
-echo "# Core functions (in dependency order)" >> "$OUTPUT_FILE"
-while IFS= read -r func; do
-  # Map function name to file path (e.g., get.safeJson -> bq/get/safeJson.sql)
-  namespace=${func%%.*}
-  name=${func#*.}
-  FILE_PATH="bq/$namespace/$name.sql"
-  if [ -f "$FILE_PATH" ]; then
-    echo "" >> "$OUTPUT_FILE"
-    echo "-- $func" >> "$OUTPUT_FILE"
-    cat "$FILE_PATH" >> "$OUTPUT_FILE"
-    echo "" >> "$OUTPUT_FILE"
-  fi
-done < "$ORDER_FILE"
+echo -e "\n-- CORE FUNCTIONS (DEPENDENCY ORDER)" >> "$OUTPUT_FILE"
+grep -v "_meta.sql" "$PATHS_FILE" | while read -r file_path; do
+    append_clean_sql "$file_path"
+done
 
-echo "Install file generated: $OUTPUT_FILE"
-echo "To install in BigQuery: bq query --use_legacy_sql=false < $OUTPUT_FILE"
+rm "$PATHS_FILE"
+echo "Install file generated: $OUTPUT_FILE (Minify: $MINIFY)"

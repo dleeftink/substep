@@ -3,7 +3,7 @@ create or replace function use.unroller(jsn STRING, pairs array<struct<open STRI
   with init as (
     from get.characterIndices(jsn,(select concat('[',string_agg(concat('\\', pair.open,'\\',pair.close),''),']') from unnest(pairs) pair))
     |> call map.objectContainment(pairs)
-    |> call get.objectBoundaries(jsn,pick)
+    |> call get.jsonObjectBoundaries(jsn,pick)
     |> select level.*
   ),
 

@@ -1,4 +1,4 @@
-create or replace function fix.unsafeJson(str STRING, esc BOOL) AS (
+create or replace function fix.jsonSafeGuards(str STRING, esc BOOL) AS (
   (str)
   -- 1. JSON Structural Elements (Highest Priority)
   .REPLACE('{', IF(esc, '\x1C', '\\{')) -- FS: File Separator (Object Open)

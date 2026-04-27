@@ -4,124 +4,141 @@ Topological sort for SQL function dependencies in substep/bq.
 Reads SQL files, extracts function definitions and calls, builds a dependency graph, and outputs install order.
 """
 
+#!/usr/bin/env python3
 import os
 import re
 import heapq
-from collections import defaultdict, deque
+import sys
+from collections import defaultdict
 
-def extract_functions_and_deps(sql_content):
-    """Extract function definitions and dependencies from SQL content."""
-    functions = set()
-    deps = defaultdict(set)
-    
-    # Find function definitions: create or replace function <namespace>.<name>
-    func_pattern = r'create or replace function (\w+)\.(\w+)\('
-    matches = list(re.finditer(func_pattern, sql_content, re.IGNORECASE))
-    if matches:
-        namespace, name = matches[0].groups()  # Assume one function per file
-        func_name = f"{namespace}.{name}"
-        functions.add(func_name)
-        
-        # Find function calls: .(<namespace>.<name>) or CALL <namespace>.<name>
-        call_pattern = r'\.\((\w+)\.(\w+)\)\('
-        for match in re.finditer(call_pattern, sql_content, re.IGNORECASE):
-            dep_namespace, dep_name = match.groups()
-            dep_func = f"{dep_namespace}.{dep_name}"
-            deps[func_name].add(dep_func)
-    
-    return functions, deps
+def extract_functions_and_deps(sql_content, valid_namespaces):
+    """Extract definitions and deps, stripping comments/strings for accuracy."""
+    # 1. Strip comments
+    sql_content = re.sub(r'--.*', '', sql_content)
+    sql_content = re.sub(r'/\*.*?\*/', '', sql_content, flags=re.DOTALL)
 
-def compute_depth(func, graph, memo=None):
-    """Compute the maximum dependency depth for a function."""
-    if memo is None:
-        memo = {}
-    
-    if func in memo:
-        return memo[func]
-    
-    if func not in graph or not graph[func]:
-        memo[func] = 0
-        return 0
-    
-    max_depth = 0
-    for dep in graph[func]:
-        max_depth = max(max_depth, 1 + compute_depth(dep, graph, memo))
-    
-    memo[func] = max_depth
-    return max_depth
+    # 2. Extract function definition
+    def_pattern = r'create\s+(?:or\s+replace\s+)?(?:table\s+)?function\s+([`\w\.]+)'
+    def_match = re.search(def_pattern, sql_content, re.IGNORECASE)
+    if not def_match:
+        return None, None, set()
 
-def topological_sort_with_depth(graph):
-    """Perform topological sort, breaking ties by dependency depth."""
-    in_degree = {node: 0 for node in graph}
-    for node in graph:
-        for dep in graph[node]:
-            in_degree[dep] += 1
+    current_func_original = def_match.group(1).replace('`', '')
+    current_func_lower = current_func_original.lower()
     
-    # Compute depth for all nodes
-    depths = {}
-    for node in graph:
-        depths[node] = compute_depth(node, graph)
-    
-    queue = [(- depths[node], node) for node in in_degree if in_degree[node] == 0]
-    import heapq
-    heapq.heapify(queue)
-    result = []
-    
-    while queue:
-        _, node = heapq.heappop(queue)
-        result.append(node)
-        for neighbor in graph.get(node, []):
-            in_degree[neighbor] -= 1
-            if in_degree[neighbor] == 0:
-                heapq.heappush(queue, (- depths[neighbor], neighbor))
-    
-    if len(result) != len(graph):
-        raise ValueError("Cycle detected in dependencies")
-    
-    return result
+    # 3. Strip strings (descriptions/options)
+    sql_content = re.sub(r"'[^']*'", "''", sql_content)
+    sql_content = re.sub(r'"[^"]*"', '""', sql_content)
+
+    # 4. Match calls using the namespace whitelist
+    ns_regex = '|'.join(map(re.escape, valid_namespaces))
+    call_pattern = r'\b(' + ns_regex + r')\.([\w\-]+)(?!\w)'
+
+    deps_lower = set()
+    for match in re.finditer(call_pattern, sql_content, re.IGNORECASE):
+        dep_func_lower = match.group(0).lower().replace('`', '')
+        if dep_func_lower != current_func_lower:
+            deps_lower.add(dep_func_lower)
+            
+    return current_func_lower, current_func_original, deps_lower
 
 def main():
     bq_dir = "bq"
-    graph = defaultdict(set)
-    all_functions = set()
+    if not os.path.exists(bq_dir):
+        print(f"Error: {bq_dir} not found", file=sys.stderr)
+        return
+
+    namespaces = [d.lower() for d in os.listdir(bq_dir) if os.path.isdir(os.path.join(bq_dir, d))]
     
-    for root, dirs, files in os.walk(bq_dir):
+    graph = defaultdict(set)      # callee -> set of callers
+    all_defined_funcs = set()
+    func_to_deps = {}             # caller -> set of callees
+    func_to_path = {}
+    func_to_original = {}
+
+    # Build the graph
+    for root, _, files in os.walk(bq_dir):
         for file in files:
             if file.endswith('.sql'):
-                filepath = os.path.join(root, file)
-                with open(filepath, 'r') as f:
+                path = os.path.join(root, file)
+                with open(path, 'r', encoding='utf-8') as f:
                     content = f.read()
-                functions, deps = extract_functions_and_deps(content)
-                all_functions.update(functions)
-                for func, func_deps in deps.items():
-                    for dep in func_deps:
-                        graph[dep].add(func)  # Reverse: dep -> func, so dep before func
+                
+                func_lower, func_original, deps_lower = extract_functions_and_deps(content, namespaces)
+                if func_lower:
+                    all_defined_funcs.add(func_lower)
+                    func_to_deps[func_lower] = deps_lower
+                    func_to_path[func_lower] = path
+                    func_to_original[func_lower] = func_original
+                    for dep in deps_lower:
+                        graph[dep].add(func_lower)
+
+    # Prepare for Topological Sort
+    in_degree = {f: 0 for f in all_defined_funcs}
+    clean_graph = defaultdict(set)
     
-    # Add all dependencies as nodes with no deps if not already present
-    for func in list(graph.keys()):
-        for dep in graph[func]:
-            if dep not in graph:
-                graph[dep] = set()
+    for caller, deps in func_to_deps.items():
+        for dep in deps:
+            if dep in all_defined_funcs:
+                clean_graph[dep].add(caller)
+                in_degree[caller] += 1
+
+    # Out-degree: How many functions depend on this one? 
+    # High out-degree = "High priority" utility function.
+    out_degree = {f: len(clean_graph[f]) for f in all_defined_funcs}
+
+    # Heap contains (-out_degree, function_name)
+    # Negative out_degree ensures the highest count comes off the heap first.
+    queue = [(-out_degree[f], f) for f in all_defined_funcs if in_degree[f] == 0]
+    heapq.heapify(queue)
     
-    # Add missing functions as nodes with no deps
-    for func in all_functions:
-        if func not in graph:
-            graph[func] = set()
+    install_order = []
     
-    print("Dependency graph:")
-    for func, deps in sorted(graph.items()):
-        if deps:
-            print(f"{func}: {sorted(deps)}")
-    
-    try:
-        order = topological_sort_with_depth(graph)
-        print("\nTopological order (by dependency depth):")
-        print("\n".join(order))
-    except ValueError as e:
-        print(f"Error: {e}")
-        # Fallback: alphabetical order
-        print("Fallback order:")
-        print("\n".join(sorted(all_functions)))
+    # Audit log to stderr
+    print("Dependency graph:", file=sys.stderr)
+    for func in sorted(all_defined_funcs):
+        internal_deps = sorted([d for d in func_to_deps[func] if d in all_defined_funcs])
+        if internal_deps:
+            dep_names = [func_to_original[d] for d in internal_deps]
+            print(f"  {func_to_original[func]} depends on: {dep_names}", file=sys.stderr)
+    print("", file=sys.stderr)
+
+    while queue:
+        priority, curr = heapq.heappop(queue)
+        install_order.append(curr)
+        
+        for neighbor in clean_graph[curr]:
+            in_degree[neighbor] -= 1
+            if in_degree[neighbor] == 0:
+                # Add to queue with its priority
+                heapq.heappush(queue, (-out_degree[neighbor], neighbor))
+
+    # Output paths to stdout for Bash
+    if len(install_order) == len(all_defined_funcs):
+        print("Topological order (Priority: Out-Degree):", file=sys.stderr)
+        for func in install_order:
+            print(f"  {func_to_original[func]} (weight: {out_degree[func]})", file=sys.stderr)
+            print(func_to_path[func])
+        
+        # Write install-order.txt with order and dependencies
+        with open("bq/app/install-order.txt", "w") as f:
+            f.write("Install Order:\n")
+            for func in install_order:
+                f.write(func_to_original[func] + "\n")
+            f.write("\nDependencies:\n")
+            for func in sorted(all_defined_funcs):
+                deps = sorted([d for d in func_to_deps[func] if d in all_defined_funcs])
+                if deps:
+                    dep_names = [func_to_original[d] for d in deps]
+                    f.write(f"{func_to_original[func]}: [{', '.join(f'\"{d}\"' for d in dep_names)}]\n")
+    else:
+        stuck = all_defined_funcs - set(install_order)
+        print("\n--- ERROR: CYCLE OR MISSING DEPS ---", file=sys.stderr)
+        for f in sorted(stuck):
+            blocking = [d for d in func_to_deps[f] if d in all_defined_funcs and d not in install_order]
+            blocking_names = [func_to_original[d] for d in blocking]
+            print(f"  {func_to_original[f]} is waiting for: {blocking_names}", file=sys.stderr)
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
