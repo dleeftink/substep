@@ -6,6 +6,19 @@ All notable changes to this project will be documented in this file.
 <!-- The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).-->
 
+## [0.1.1] - 2026-04-27
+
+### Added
+- **Build and installation infrastructure**:
+  - `scripts/topo_sort.py`: Topological sorting script for SQL function dependencies with depth-based tie-breaking.
+  - `scripts/build_install.sh`: Automated build script to concatenate SQL files in correct dependency order.
+  - `bq/app/install.sql`: Pre-built consolidated installation file with all functions in dependency order.
+  - `bq/app/install-order.txt`: Dependency order manifest for reference and reproducibility.
+
+### Changed
+- Standardized camelCase JSON function naming across all files and documentation (json prefix in lowercase).
+- Updated namespace version numbers to 0.1.1 for affected namespaces (get, lay, map, fix, use).
+
 ## [0.1.0] - 2026-04-26
 
 ### Added
