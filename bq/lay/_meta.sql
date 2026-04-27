@@ -1,6 +1,6 @@
 CREATE OR REPLACE FUNCTION lay.meta() AS (STRUCT(
   "Layers: Formatters and layouters for the 'substep' namespace." AS scope,
-  "0.1.0" AS version,
+  "0.1.1" AS version,
   "https://github.com/dleeftink/substep" AS repo
 )) OPTIONS (
   description = "Formatters and layouters for the 'substep' namespace."

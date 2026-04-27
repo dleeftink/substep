@@ -1,0 +1,30 @@
+Dependency graph:
+fix.emptyJsonKeys: ['def.meta', 'get.safeJson']
+fix.shallowItems: ['def.meta', 'get.unrolled']
+fix.unsafeJson: ['def.meta', 'map.unsafeJson']
+get.stringifiedJsonFromStruct: ['def.meta', 'get.safeJson']
+lay.shallowItems: ['def.meta', 'get.objectFragment']
+lay.unsafeJson: ['def.meta', 'use.parser']
+map.unsafeJson: ['def.meta', 'get.safeJson']
+safe.parse_json: ['def.meta', 'use.parser']
+use.unroller: ['def.meta', 'get.unrolled']
+
+Topological order (by dependency depth):
+fix.unsafeJson
+fix.emptyJsonKeys
+fix.shallowItems
+get.stringifiedJsonFromStruct
+lay.shallowItems
+lay.unsafeJson
+map.unsafeJson
+safe.parse_json
+use.unroller
+cue.objectMetadataInterface
+fix.keyFragment
+get.keyFragment
+get.nearestJsonKeyIndex
+get.objectFragment
+get.objectMetadata
+get.safeJson
+get.unrolled
+use.parser
