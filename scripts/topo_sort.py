@@ -21,9 +21,10 @@ def extract_functions_and_deps(sql_content, valid_namespaces):
     def_pattern = r'create\s+(?:or\s+replace\s+)?(?:table\s+)?function\s+([`\w\.]+)'
     def_match = re.search(def_pattern, sql_content, re.IGNORECASE)
     if not def_match:
-        return None, set()
+        return None, None, set()
 
-    current_func = def_match.group(1).lower().replace('`', '')
+    current_func_original = def_match.group(1).replace('`', '')
+    current_func_lower = current_func_original.lower()
     
     # 3. Strip strings (descriptions/options)
     sql_content = re.sub(r"'[^']*'", "''", sql_content)
@@ -33,13 +34,13 @@ def extract_functions_and_deps(sql_content, valid_namespaces):
     ns_regex = '|'.join(map(re.escape, valid_namespaces))
     call_pattern = r'\b(' + ns_regex + r')\.([\w\-]+)(?!\w)'
 
-    deps = set()
+    deps_lower = set()
     for match in re.finditer(call_pattern, sql_content, re.IGNORECASE):
-        dep_func = match.group(0).lower().replace('`', '')
-        if dep_func != current_func:
-            deps.add(dep_func)
+        dep_func_lower = match.group(0).lower().replace('`', '')
+        if dep_func_lower != current_func_lower:
+            deps_lower.add(dep_func_lower)
             
-    return current_func, deps
+    return current_func_lower, current_func_original, deps_lower
 
 def main():
     bq_dir = "bq"
@@ -53,6 +54,7 @@ def main():
     all_defined_funcs = set()
     func_to_deps = {}             # caller -> set of callees
     func_to_path = {}
+    func_to_original = {}
 
     # Build the graph
     for root, _, files in os.walk(bq_dir):
@@ -62,13 +64,14 @@ def main():
                 with open(path, 'r', encoding='utf-8') as f:
                     content = f.read()
                 
-                func, deps = extract_functions_and_deps(content, namespaces)
-                if func:
-                    all_defined_funcs.add(func)
-                    func_to_deps[func] = deps
-                    func_to_path[func] = path
-                    for dep in deps:
-                        graph[dep].add(func)
+                func_lower, func_original, deps_lower = extract_functions_and_deps(content, namespaces)
+                if func_lower:
+                    all_defined_funcs.add(func_lower)
+                    func_to_deps[func_lower] = deps_lower
+                    func_to_path[func_lower] = path
+                    func_to_original[func_lower] = func_original
+                    for dep in deps_lower:
+                        graph[dep].add(func_lower)
 
     # Prepare for Topological Sort
     in_degree = {f: 0 for f in all_defined_funcs}
@@ -96,7 +99,8 @@ def main():
     for func in sorted(all_defined_funcs):
         internal_deps = sorted([d for d in func_to_deps[func] if d in all_defined_funcs])
         if internal_deps:
-            print(f"  {func} depends on: {internal_deps}", file=sys.stderr)
+            dep_names = [func_to_original[d] for d in internal_deps]
+            print(f"  {func_to_original[func]} depends on: {dep_names}", file=sys.stderr)
     print("", file=sys.stderr)
 
     while queue:
@@ -113,14 +117,27 @@ def main():
     if len(install_order) == len(all_defined_funcs):
         print("Topological order (Priority: Out-Degree):", file=sys.stderr)
         for func in install_order:
-            print(f"  {func} (weight: {out_degree[func]})", file=sys.stderr)
+            print(f"  {func_to_original[func]} (weight: {out_degree[func]})", file=sys.stderr)
             print(func_to_path[func])
+        
+        # Write install-order.txt with order and dependencies
+        with open("bq/app/install-order.txt", "w") as f:
+            f.write("Install Order:\n")
+            for func in install_order:
+                f.write(func_to_original[func] + "\n")
+            f.write("\nDependencies:\n")
+            for func in sorted(all_defined_funcs):
+                deps = sorted([d for d in func_to_deps[func] if d in all_defined_funcs])
+                if deps:
+                    dep_names = [func_to_original[d] for d in deps]
+                    f.write(f"{func_to_original[func]}: {', '.join(dep_names)}\n")
     else:
         stuck = all_defined_funcs - set(install_order)
         print("\n--- ERROR: CYCLE OR MISSING DEPS ---", file=sys.stderr)
         for f in sorted(stuck):
             blocking = [d for d in func_to_deps[f] if d in all_defined_funcs and d not in install_order]
-            print(f"  {f} is waiting for: {blocking}", file=sys.stderr)
+            blocking_names = [func_to_original[d] for d in blocking]
+            print(f"  {func_to_original[f]} is waiting for: {blocking_names}", file=sys.stderr)
         sys.exit(1)
 
 if __name__ == "__main__":

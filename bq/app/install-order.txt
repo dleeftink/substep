@@ -1,20 +1,40 @@
-fix.jsonkeyfragment
-fix.jsonprimitives
-fix.jsonsafeguards
-fix.jsontuples
-get.characterindices
-get.jsonkeyfragment
-get.jsonkeyindex
-get.jsonstringfromstruct
-lay.jsonprimitives
-get.jsonobjectfragment
-cue.jsonobjectinterface
-get.jsonobjectmetadata
-get.jsonobjectboundaries
-lay.jsonsafeguards
-map.jsonsafeguards
-get.jsonstringmask
-map.objectcontainment
+Install Order:
+fix.jsonKeyFragment
+fix.jsonPrimitives
+fix.jsonSafeGuards
+fix.jsonTuples
+get.characterIndices
+get.jsonKeyFragment
+get.jsonKeyIndex
+get.jsonStringFromStruct
+lay.jsonPrimitives
+get.jsonObjectFragment
+cue.jsonObjectInterface
+get.jsonObjectMetadata
+get.jsonObjectBoundaries
+lay.jsonSafeGuards
+map.jsonSafeGuards
+get.jsonStringMask
+map.objectContainment
 use.unroller
 get.unrolled
+cue.meta
+def.meta
+fix.meta
+get.meta
+lay.meta
+map.meta
+try.meta
+use.meta
 use.parser
+
+Dependencies:
+cue.jsonObjectInterface: get.jsonKeyFragment, get.jsonObjectFragment
+get.jsonObjectBoundaries: get.jsonObjectMetadata
+get.jsonObjectFragment: lay.jsonPrimitives
+get.jsonObjectMetadata: cue.jsonObjectInterface, fix.jsonKeyFragment, get.jsonKeyIndex
+get.jsonStringMask: fix.jsonTuples, get.jsonStringFromStruct, map.jsonSafeGuards
+get.unrolled: fix.jsonPrimitives, use.unroller
+map.jsonSafeGuards: fix.jsonSafeGuards
+use.parser: get.jsonStringMask, get.unrolled, lay.jsonSafeGuards
+use.unroller: get.characterIndices, get.jsonObjectBoundaries, map.objectContainment
