@@ -2,7 +2,7 @@
 # Concatenates SQL files in topological order for BigQuery installation
 
 OUTPUT_FILE="bq/app/install.sql"
-MINIFY=true  # Set to true to enable minification
+MINIFY=true
 mkdir -p bq/app
 
 # Clear and initialize output file
@@ -24,21 +24,18 @@ append_clean_sql() {
     echo -e "\n-- Source: $file_path" >> "$OUTPUT_FILE"
     
     if [ "$MINIFY" = true ]; then
-        # MINIFICATION LOGIC:
-        # 1. Perl strips multi-line /* */ and single-line -- comments
-        # 2. Replace all newlines/tabs with spaces
-        # 3. Collapse multiple spaces into one
-        # 4. Remove spaces around common SQL operators/syntax characters
-        # 5. Trim trailing semicolons
+        # MINIFICATION WITH STRING PROTECTION:
+        # 1. Strip comments first
+        # 2. Match 'strings' or "strings" and skip them (*SKIP)(*F)
+        # 3. On everything else: collapse whitespace and trim around operators
         perl -0777 -pe '
             s/\/\*.*?\*\///gs; 
-            s/--.*//g; 
-            s/\s+/ /g; 
-            s/\s*([,()=+\-*\/])\s*/$1/g;
+            s/--.*//g;
+            s/(["\x27])(?:\\.|(?!\1).)*\1(*SKIP)(*F)|(?:\s+)/ /g;
+            s/(["\x27])(?:\\.|(?!\1).)*\1(*SKIP)(*F)|\s*([,()=+\-*\/])\s*/$2/g;
             s/;\s*$//;
         ' "$file_path" >> "$OUTPUT_FILE"
     else
-        # STANDARD CLEANUP LOGIC:
         perl -0777 -pe 's/\/\*.*?\*\///gs; s/--.*//g' "$file_path" | \
         sed -e 's/[[:space:];]*$//' >> "$OUTPUT_FILE"
     fi
