@@ -99,7 +99,7 @@ create or replace function fix.jsonKeyFragment(key STRING) as (
   (key).regexp_replace(r'[\{\[]+','').nullif('').rtrim(':').split(':').array_last().replace('"','')
 ) OPTIONS (
   description = "Normalizes a key string by removing padding and structural artifacts."
-);s
+);
 
 -- Source: bq/fix/jsonPrimitives.sql
 create or replace function fix.jsonPrimitives(jsn STRING) as (
