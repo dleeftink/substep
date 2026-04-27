@@ -1,0 +1,9 @@
+# Language detection for GitHub Linguist
+# Ensure SQL files are recognized in repository statistics
+
+*.sql linguist-detectable=true
+*.sql linguist-language=SQL
+
+# Python and shell scripts for clarity
+*.py linguist-language=Python
+*.sh linguist-language=Shell
