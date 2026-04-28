@@ -1,3 +1,5 @@
+-- TVF candidate
+
 create or replace function use.parser(object ANY TYPE, maxDepth INT) as ((
 
   with safe as (

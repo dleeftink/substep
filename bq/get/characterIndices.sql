@@ -1,3 +1,7 @@
+-- TVF candidate: 
+-- > input a column of jsn strings
+-- > output a column of arrays of structs with character indices
+
 create or replace table function get.characterIndices(str STRING, rgx STRING) as ((
   select regexp_instr(str, rgx, 1, off + 1) AS idx, sub
   from unnest(regexp_extract_all(str, rgx)) AS sub WITH OFFSET AS off
