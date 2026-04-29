@@ -29,7 +29,8 @@ create or replace function get.jsonObjectMetadata(a INT, b INT, pack ANY TYPE, j
   locs as (
 
     from keys
-    |> set acid = sum(arr_ctx) over(partition by raise,depth order by slot), ocid = row_number() over(partition by raise,depth,key order by open)-1
+    |> set acid = sum(arr_ctx) over(partition by raise,/*depth*/ nest order by slot),  -- investigate nest instead of depth for better handling of nested arrays
+           ocid = row_number() over(partition by raise,depth,key order by open)-1
     |> set ecid = row_number() over(partition by raise,ocid order by open)-1
 
     |> set list = if(arr_sym in ("[{","[[") and sym in ("[","{"),true,null)
