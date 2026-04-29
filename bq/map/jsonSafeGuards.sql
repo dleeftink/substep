@@ -1,13 +1,30 @@
-create or replace function map.jsonSafeGuards(jsn STRING, esc BOOL) AS ((
-  select string_agg(if(
-    (str).starts_with("\x0F"),
-      (str).replace("\x0F",'').(fix.jsonSafeGuards)(esc),str),'' order by idx  --> make sure you don't accidentally replace 'safe' \x0F byte markers...
-  )  from (
-    select (jsn).REPLACE('\\"', if(esc,'\x05','\\“')) -- replace double quote with curly quote “ if esc = false (for debugging)
-      .regexp_replace(r'"([^"]*)"', 
-        CONCAT(CODE_POINTS_TO_STRING([14, 15]), '"\\1"', CODE_POINTS_TO_STRING([14])) -- 14 = \x0E and 15 = \x0F
-      ).split('\x0E') as arr
-  ) get, get.arr str with offset idx
+CREATE OR REPLACE FUNCTION map.jsonSafeGuards(jsn STRING, esc BOOL) AS ((
+
+  -- 1. Replace escaped quotes with a unique marker (\x05) so they don't break the SPLIT
+  -- 2. Split on the structural double quote (")
+  -- 3. Content between quotes will always be at ODD offsets (1, 3, 5...)
+  
+  WITH chunks AS (
+    SELECT 
+      part, 
+      off,
+      MOD(off, 2) = 1 AS is_content
+    FROM UNNEST(
+      SPLIT(REPLACE(jsn, '\\"', '\x05'), '"')
+    ) AS part WITH OFFSET off
+  )
+  
+  SELECT 
+    -- 4. Re-assemble. If it's content, wrap it back in quotes and apply safeguards
+
+    STRING_AGG(
+      IF(is_content, 
+         CONCAT('"', fix.jsonSafeGuards(part, esc), '"'), 
+         part), 
+      '' ORDER BY off
+    )
+    
+  FROM chunks
 )) OPTIONS (
   description = "Sanitizes quoted JSON fields by escaping reserved delimiters."
 );
