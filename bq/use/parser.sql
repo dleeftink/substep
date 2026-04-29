@@ -1,5 +1,9 @@
 -- TVF candidate
 
+-- Investigate the INFORMATION_SCHEMA.COLUMN_FIELD_PATHS view. 
+-- > BigQuery tracks the "discovered" schema of nested fields.
+
+
 create or replace function use.parser(object ANY TYPE, maxDepth INT) as ((
 
   with safe as (
