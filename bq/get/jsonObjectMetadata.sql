@@ -50,7 +50,7 @@ create or replace function get.jsonObjectMetadata(a INT, b INT, pack ANY TYPE, j
   aggs as (
 
     from ords |> as objs
-    |> extend (select as struct objs.* except(raise,pre,depth,kpos,arr_ctx)) as obj,
+    |> extend (select as struct objs.* except(raise,pre,depth,kpos,arr_sym,arr_ctx)) as obj,
     |> aggregate
         array_agg(if(raise,obj,null) ignore nulls order by obj.open) children,
         array_agg(if(not raise,obj,null) ignore nulls order by obj.open) parents,
