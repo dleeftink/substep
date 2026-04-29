@@ -78,41 +78,27 @@ CREATE OR REPLACE FUNCTION use.meta() AS (STRUCT(
 
 -- Source: bq/fix/jsonKeyFragment.sql
 create or replace function fix.jsonKeyFragment(key STRING) as (
-  (key).regexp_replace(r'[\{\[]+','').nullif('').rtrim(':').split(':').array_last().replace('"','')
+  (key).translate('[{','').nullif('').regexp_extract(r'\:?"([^"]+)"\:?$')
 ) OPTIONS (
   description = "Normalizes a key string by removing padding and structural artifacts."
 );
 
 -- Source: bq/fix/jsonPrimitives.sql
-create or replace function fix.jsonPrimitives(jsn STRING) as (
-  (jsn).regexp_replace(r'((?:"[^"]*"|[^:,{}]*)\s*:\s*(?:"[^"]*"|[\d\.]+|true|false|null))',r'"#":{\1},"#":#')
-) OPTIONS (
+CREATE OR REPLACE FUNCTION fix.jsonPrimitives(jsn STRING) AS (
+  (jsn).REGEXP_REPLACE(r'("[^"]*"\s*:\s*(?:"[^"]*"|[\d\.]+|true|false|null))', r'"#":{\1},"#":#')
+); OPTIONS (
   description = "Wraps shallow JSON key/value pairs with temporary object boundaries."
 );
 
 -- Source: bq/fix/jsonSafeGuards.sql
-create or replace function fix.jsonSafeGuards(str STRING, esc BOOL) AS (
-  (str)
-
-  .REPLACE('{', IF(esc, '\x1C', '\\{'))
-  .REPLACE('}', IF(esc, '\x1D', '\\}'))
-  .REPLACE('[', IF(esc, '\x02', '\\['))
-  .REPLACE(']', IF(esc, '\x03', '\\]'))
-  .REPLACE(':', IF(esc, '\x1E', '\\:'))
-  .REPLACE(',', IF(esc, '\x1F', '\\,'))
-
-
-  .REPLACE('<', IF(esc, '\x01', '\\<'))
-  .REPLACE('>', IF(esc, '\x04', '\\>'))
-  .REPLACE('(', IF(esc, '\x11', '\\('))
-  .REPLACE(')', IF(esc, '\x13', '\\)'))
-
-
-  .REPLACE('#', IF(esc, '\x1B', '\\#'))
-
+CREATE OR REPLACE FUNCTION fix.jsonSafeGuards(str STRING) AS (
+  TRANSLATE(str,
+    '{}[]:,<>()#',
+    CODE_POINTS_TO_STRING([0x1C, 0x1D, 0x02, 0x03, 0x1E, 0x1F, 0x01, 0x04, 0x11, 0x13, 0x1B])
+  )
 ) OPTIONS (
   description = "Escapes JSON delimiters using control characters or backslashes to prevent parsing collisions."
-);
+ );
 
 -- Source: bq/fix/jsonTuples.sql
 create or replace function fix.jsonTuples(jsn STRING) as (
@@ -126,6 +112,10 @@ create or replace function fix.jsonTuples(jsn STRING) as (
 );
 
 -- Source: bq/get/characterIndices.sql
+
+
+
+
 create or replace table function get.characterIndices(str STRING, rgx STRING) as ((
   select regexp_instr(str, rgx, 1, off + 1) AS idx, sub
   from unnest(regexp_extract_all(str, rgx)) AS sub WITH OFFSET AS off
@@ -158,19 +148,25 @@ create or replace function get.jsonStringFromStruct(object ANY TYPE) as ((
       select format("%T",object) sql,(object).to_json_string() jsn
     )
 
+  ),
+
+  fuse as (
+
+
+
+
+    select if(array_length(sql) = array_length(jsn),(
+      select string_agg(res,',' order by idx) from (
+        select idx,IF((jsonpart).translate('0123456789','0').contains_substr("0"),
+          (jsonpart).REGEXP_REPLACE(r'^([^0-9]*)[0-9\.\s-]+([\]\}]*)$',
+             (r'\1').CONCAT((sql[idx]).ltrim().REGEXP_REPLACE(r'[^0-9\.\s-]', ''), r'\2')
+        ),jsonpart) as res from unnest(jsn) jsonpart with offset idx
+      )
+    ), error("Imbalanced SQL / JSON part arrays")) jsn from list
+
   )
 
-
-
-
-  select if(array_length(sql) = array_length(jsn),(
-    select string_agg(res,',' order by idx) from (
-      select idx,IF((jsonpart).REGEXP_CONTAINS(r'[0-9]'),
-        (jsonpart).REGEXP_REPLACE(r'^([^0-9]*)[0-9\.\s-]+([\]\}]*)$',
-           (r'\1').CONCAT((sql[idx]).ltrim().REGEXP_REPLACE(r'[^0-9\.\s-]', ''), r'\2')
-      ),jsonpart) as res from unnest(jsn) jsonpart with offset idx
-    )
-  ), error("Imbalanced SQL / JSON part arrays")) jsn from list
+  select jsn from fuse
 
 )) OPTIONS (
   description = "Serializes a SQL struct to JSON while preserving literal source values."
@@ -216,8 +212,7 @@ create or replace function get.jsonObjectMetadata(a INT, b INT, pack ANY TYPE, j
   syms as (
 
     from init
-    |> set arr_sym = (key).replace('"#":{','').split(':'), sym = right(key,1)
-    |> set arr_sym = coalesce(arr_sym[safe_offset(1)],arr_sym[safe_offset(0)])
+    |> set arr_sym = (key).regexp_extract(r'\:([\[\{]+)').ifnull(key), sym = right(key,1)
     |> set arr_ctx = if(left(arr_sym,1) = '[' and substring(arr_sym,2,1) in ('[','{'),1,0)
 
   ),
@@ -226,7 +221,7 @@ create or replace function get.jsonObjectMetadata(a INT, b INT, pack ANY TYPE, j
 
     from syms
     |> set key = fix.jsonKeyFragment(key)
-    |> set key = if(key='#',(json).translate('{}"','').split(':')[safe_offset(0)],key), sym = if(key='#',key,sym)
+    |> set key = if(key='#',(json).translate('{}"','').regexp_extract(r'^([^:]+)'),key), sym = if(key='#',key,sym)
     |> set key = coalesce(key,last_value(if(not raise,key,null) ignore nulls) over(partition by depth order by open))
 
   ),
@@ -234,8 +229,7 @@ create or replace function get.jsonObjectMetadata(a INT, b INT, pack ANY TYPE, j
   locs as (
 
     from keys
-    |> set acid = sum(arr_ctx) over(partition by raise,depth order by slot)
-    |> set ocid = row_number() over(partition by raise,depth,key order by open)-1
+    |> set acid = sum(arr_ctx) over(partition by raise,depth order by slot), ocid = row_number() over(partition by raise,depth,key order by open)-1
     |> set ecid = row_number() over(partition by raise,ocid order by open)-1
 
     |> set list = if(arr_sym in ("[{","[[") and sym in ("[","{"),true,null)
@@ -255,7 +249,7 @@ create or replace function get.jsonObjectMetadata(a INT, b INT, pack ANY TYPE, j
   aggs as (
 
     from ords |> as objs
-    |> extend (select as struct objs.* except(raise,pre,depth,kpos,arr_sym,arr_ctx)) as obj,
+    |> extend (select as struct objs.* except(raise,pre,depth,kpos,arr_ctx)) as obj,
     |> aggregate
         array_agg(if(raise,obj,null) ignore nulls order by obj.open) children,
         array_agg(if(not raise,obj,null) ignore nulls order by obj.open) parents,
@@ -292,41 +286,42 @@ create or replace table function get.jsonObjectBoundaries(input table <idx INT, 
 );
 
 -- Source: bq/lay/jsonSafeGuards.sql
-create or replace function lay.jsonSafeGuards(str STRING) AS (
-  (str)
-
-  .REPLACE('\x1C','{')
-  .REPLACE('\x1D','}')
-  .REPLACE('\x02','[')
-  .REPLACE('\x03',']')
-  .REPLACE('\x1E',':')
-  .REPLACE('\x1F',',')
-
-
-  .REPLACE('\x01','<')
-  .REPLACE('\x04','>')
-  .REPLACE('\x11','(')
-  .REPLACE('\x13',')')
-
-
-  .REPLACE('\x1B','#')
-  .REPLACE('\x05','"')
-
+CREATE OR REPLACE FUNCTION lay.jsonSafeGuards(str STRING) AS (
+  TRANSLATE(str,
+    CODE_POINTS_TO_STRING([0x1C, 0x1D, 0x02, 0x03, 0x1E, 0x1F, 0x01, 0x04, 0x11, 0x13, 0x1B,0x05]),
+    '{}[]:,<>()#"'
 ) OPTIONS (
   description = "Restores control-character markers back to their literal characters."
 );
 
 -- Source: bq/map/jsonSafeGuards.sql
-create or replace function map.jsonSafeGuards(jsn STRING, esc BOOL) AS ((
-  select string_agg(if(
-    (str).starts_with("\x0F"),
-      (str).replace("\x0F",'').(fix.jsonSafeGuards)(esc),str),'' order by idx
-  )  from (
-    select (jsn).REPLACE('\\"', if(esc,'\x05','\\“'))
-      .regexp_replace(r'"([^"]*)"',
-        CONCAT(CODE_POINTS_TO_STRING([14, 15]), '"\\1"', CODE_POINTS_TO_STRING([14]))
-      ).split('\x0E') as arr
-  ) get, get.arr str with offset idx
+CREATE OR REPLACE FUNCTION map.jsonSafeGuards(jsn STRING, esc BOOL) AS ((
+
+
+
+
+
+  WITH chunks AS (
+    SELECT
+      part,
+      off,
+      MOD(off, 2) = 1 AS is_content
+    FROM UNNEST(
+      SPLIT(REPLACE(jsn, '\\"', '\x05'), '"')
+    ) AS part WITH OFFSET off
+  )
+
+  SELECT
+
+
+    STRING_AGG(
+      IF(is_content,
+         CONCAT('"', fix.jsonSafeGuards(part, esc), '"'),
+         part),
+      '' ORDER BY off
+    )
+
+  FROM chunks
 )) OPTIONS (
   description = "Sanitizes quoted JSON fields by escaping reserved delimiters."
 );
@@ -339,6 +334,10 @@ create or replace function get.jsonStringMask(object ANY TYPE) as (
 );
 
 -- Source: bq/map/objectContainment.sql
+
+
+
+
 create or replace table function map.objectContainment(input table<idx INT, sub STRING>, pairs array<struct<open STRING, close STRING>>) as (
 
   with locs as (
@@ -358,6 +357,8 @@ create or replace table function map.objectContainment(input table<idx INT, sub 
 );
 
 -- Source: bq/use/unroller.sql
+
+
 create or replace function use.unroller(jsn STRING, pairs array<struct<open STRING, close STRING>>, pick INT) as ((
 
   with init as (
@@ -401,6 +402,8 @@ create or replace function use.unroller(jsn STRING, pairs array<struct<open STRI
 );
 
 -- Source: bq/get/unrolled.sql
+
+
 create or replace function get.unrolled(jsn STRING, pairs array<struct<open STRING, close STRING>>, upto INT) as (
   (jsn).(fix.jsonPrimitives)().(use.unroller)(pairs,upto)
 ) OPTIONS (
@@ -408,10 +411,12 @@ create or replace function get.unrolled(jsn STRING, pairs array<struct<open STRI
 );
 
 -- Source: bq/use/parser.sql
+
+
 create or replace function use.parser(object ANY TYPE, maxDepth INT) as ((
 
   with safe as (
-    select get.jsonStringMask(object) as jsn, [('[',']'),('{','}')] as pairs
+    select get.jsonStringMask(object) as jsn, [('[',']'),('{','}')] as pairs -- '
   ),
 
   main as (
