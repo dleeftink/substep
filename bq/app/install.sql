@@ -56,15 +56,6 @@ CREATE OR REPLACE FUNCTION map.meta() AS (STRUCT(
   description = "Lambdas and transformers for the 'substep' namespace."
 );
 
--- Source: bq/try/_meta.sql
-CREATE OR REPLACE FUNCTION try.meta() AS (STRUCT(
-  "Testing: Dry-runs and unit tests for the 'substep' namespace." AS scope,
-  "0.1.2" AS version,
-  "https://github.com/dleeftink/substep" AS repo
-)) OPTIONS (
-  description = "Dry-runs and unit tests for the 'substep' namespace."
-);
-
 -- Source: bq/use/_meta.sql
 CREATE OR REPLACE FUNCTION use.meta() AS (STRUCT(
   "Tooling: Core functions for the 'substep' namespace." AS scope,
@@ -229,7 +220,8 @@ create or replace function get.jsonObjectMetadata(a INT, b INT, pack ANY TYPE, j
   locs as (
 
     from keys
-    |> set acid = sum(arr_ctx) over(partition by raise,depth order by slot), ocid = row_number() over(partition by raise,depth,key order by open)-1
+    |> set acid = sum(arr_ctx) over(partition by raise, nest order by slot),
+           ocid = row_number() over(partition by raise,depth,key order by open)-1
     |> set ecid = row_number() over(partition by raise,ocid order by open)-1
 
     |> set list = if(arr_sym in ("[{","[[") and sym in ("[","{"),true,null)
@@ -249,7 +241,7 @@ create or replace function get.jsonObjectMetadata(a INT, b INT, pack ANY TYPE, j
   aggs as (
 
     from ords |> as objs
-    |> extend (select as struct objs.* except(raise,pre,depth,kpos,arr_ctx)) as obj,
+    |> extend (select as struct objs.* except(raise,pre,depth,kpos,arr_sym,arr_ctx)) as obj,
     |> aggregate
         array_agg(if(raise,obj,null) ignore nulls order by obj.open) children,
         array_agg(if(not raise,obj,null) ignore nulls order by obj.open) parents,
@@ -413,10 +405,14 @@ create or replace function get.unrolled(jsn STRING, pairs array<struct<open STRI
 -- Source: bq/use/parser.sql
 
 
+
+
+
+
 create or replace function use.parser(object ANY TYPE, maxDepth INT) as ((
 
   with safe as (
-    select get.jsonStringMask(object) as jsn, [('[',']'),('{','}')] as pairs -- '
+    select get.jsonStringMask(object) as jsn, [('[',']'),('{','}')] as pairs
   ),
 
   main as (
