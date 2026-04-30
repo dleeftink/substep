@@ -8,6 +8,13 @@
       "installTools": false
     }
   },
+  "mounts": [
+    {
+      "source": "${localEnv:USERPROFILE}/.continue",
+      "target": "/home/vscode/.continue",
+      "type": "bind"
+    }
+  ],
   "customizations": {
     "vscode": {
       "extensions": [
