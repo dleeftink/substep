@@ -27,23 +27,26 @@ done
 # Clear and initialize output file
 echo "-- Generated BigQuery Install Script" > "$OUTPUT_FILE"
 
-# Run Python script to generate dependencies.yaml
+# Run Python script to generate dependency.yaml
 python3 scripts/topo_sort.py
 
 if [ ! -f "bq/app/dependencies.yaml" ]; then
-    echo "Error: Topological sort failed to generate dependencies.yaml."
+    echo "Error: Topological sort failed to generate bq/dependency.yaml."
     exit 1
 fi
 
-# We can use python to read the yaml safely instead of needing 'yq'
-# This iterates through the install order and looks up the path in the path_map
-mapfile -t INSTALL_ORDER < <(python3 -c "import yaml; print('\n'.join(yaml.safe_load(open('bq/dependency.yaml'))['install_order']))")
-
-# Function to get path from function name
-get_path() {
-    local func_name=$1
-    python3 -c "import yaml; print(yaml.safe_load(open('bq/dependency.yaml'))['path_map'].get('$func_name', ''))"
-}
+# Extract install order and path map once to avoid repeated python calls
+# We'll use a temporary file to store path|function_name pairs in install order
+TEMP_ORDER=$(mktemp)
+python3 -c "
+import yaml
+with open('bq/app/dependencies.yaml') as f:
+    data = yaml.safe_load(f)
+    order = data['install_order']
+    paths = data['path_map']
+    for func in order:
+        print(f\"{paths[func]}|{func}\")
+" > "$TEMP_ORDER"
 
 # Function to clean, minify, and append
 append_clean_sql() {
@@ -69,17 +72,19 @@ append_clean_sql() {
 }
 
 echo -e "\n-- META FUNCTIONS" >> "$OUTPUT_FILE"
-for func in "${INSTALL_ORDER[@]}"; do
-    if [[ "$func" == *"_meta.sql"* ]]; then
-        append_clean_sql "$(get_path "$func")"
+while IFS="|" read -r path func; do
+    if [[ "$path" == *"_meta.sql" ]]; then
+        append_clean_sql "$path"
     fi
-done
+done < "$TEMP_ORDER"
 
 echo -e "\n-- CORE FUNCTIONS (DEPENDENCY ORDER)" >> "$OUTPUT_FILE"
-for func in "${INSTALL_ORDER[@]}"; do
-    if [[ "$func" != *"_meta.sql"* ]]; then
-        append_clean_sql "$(get_path "$func")"
+while IFS="|" read -r path func; do
+    if [[ "$path" != *"_meta.sql" ]]; then
+        append_clean_sql "$path"
     fi
-done
+done < "$TEMP_ORDER"
+
+rm "$TEMP_ORDER"
 
 echo "Install file generated: $OUTPUT_FILE (Minify: $MINIFY)"
