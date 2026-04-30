@@ -1,1 +1,30 @@
-{"image":"mcr.microsoft.com/devcontainers/universal:2"}
+{
+  "name": "supdev",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-22.04",
+  "features": {
+    "ghcr.io/devcontainers/features/git:1": {},
+    "ghcr.io/devcontainers/features/python:1": {
+      "version": "latest",
+      "installTools": false
+    }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "Continue.continue"
+      ],
+      "settings": {
+        // "python.terminal.activateEnvInSelectedTerminal": true,
+        "terminal.integrated.defaultProfile.linux": "bash",
+        "files.autoSave": "afterDelay",
+        "remote.extensionKind": {
+          "Continue.continue": [
+            "workspace"
+          ]
+        }
+      }
+    }
+  },
+  "remoteUser": "vscode"
+}
