@@ -27,15 +27,23 @@ done
 # Clear and initialize output file
 echo "-- Generated BigQuery Install Script" > "$OUTPUT_FILE"
 
-# Run Python script to get sorted file paths
-PATHS_FILE=$(mktemp)
-python3 scripts/topo_sort.py > "$PATHS_FILE"
+# Run Python script to generate dependencies.yaml
+python3 scripts/topo_sort.py
 
-if [ ! -s "$PATHS_FILE" ]; then
-    echo "Error: Topological sort failed or returned no files."
-    rm "$PATHS_FILE"
+if [ ! -f "bq/app/dependencies.yaml" ]; then
+    echo "Error: Topological sort failed to generate dependencies.yaml."
     exit 1
 fi
+
+# We can use python to read the yaml safely instead of needing 'yq'
+# This iterates through the install order and looks up the path in the path_map
+mapfile -t INSTALL_ORDER < <(python3 -c "import yaml; print('\n'.join(yaml.safe_load(open('bq/dependency.yaml'))['install_order']))")
+
+# Function to get path from function name
+get_path() {
+    local func_name=$1
+    python3 -c "import yaml; print(yaml.safe_load(open('bq/dependency.yaml'))['path_map'].get('$func_name', ''))"
+}
 
 # Function to clean, minify, and append
 append_clean_sql() {
@@ -61,14 +69,17 @@ append_clean_sql() {
 }
 
 echo -e "\n-- META FUNCTIONS" >> "$OUTPUT_FILE"
-grep "_meta.sql" "$PATHS_FILE" | while read -r file_path; do
-    append_clean_sql "$file_path"
+for func in "${INSTALL_ORDER[@]}"; do
+    if [[ "$func" == *"_meta.sql"* ]]; then
+        append_clean_sql "$(get_path "$func")"
+    fi
 done
 
 echo -e "\n-- CORE FUNCTIONS (DEPENDENCY ORDER)" >> "$OUTPUT_FILE"
-grep -v "_meta.sql" "$PATHS_FILE" | while read -r file_path; do
-    append_clean_sql "$file_path"
+for func in "${INSTALL_ORDER[@]}"; do
+    if [[ "$func" != *"_meta.sql"* ]]; then
+        append_clean_sql "$(get_path "$func")"
+    fi
 done
 
-rm "$PATHS_FILE"
 echo "Install file generated: $OUTPUT_FILE (Minify: $MINIFY)"

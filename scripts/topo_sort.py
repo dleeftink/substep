@@ -7,6 +7,7 @@ Reads SQL files, extracts function definitions and calls, builds a dependency gr
 #!/usr/bin/env python3
 import os
 import re
+import yaml
 import heapq
 import sys
 from collections import defaultdict
@@ -113,24 +114,19 @@ def main():
                 # Add to queue with its priority
                 heapq.heappush(queue, (-out_degree[neighbor], neighbor))
 
-    # Output paths to stdout for Bash
+    # Output paths to stdout for Bash (for now, keep for compatibility or switch to YAML reading)
+    # Write dependencies.yaml
+    yaml_output = {
+        "install_order": [func_to_original[f] for f in install_order],
+        "dependencies": {
+            func_to_original[f]: [func_to_original[d] for d in sorted(func_to_deps[f]) if d in all_defined_funcs]
+            for f in install_order
+        },
+        "path_map": {func_to_original[f]: func_to_path[f] for f in install_order}
+    }
     if len(install_order) == len(all_defined_funcs):
-        print("Topological order (Priority: Out-Degree):", file=sys.stderr)
-        for func in install_order:
-            print(f"  {func_to_original[func]} (weight: {out_degree[func]})", file=sys.stderr)
-            print(func_to_path[func])
-        
-        # Write install-order.txt with order and dependencies
-        with open("bq/app/install-order.txt", "w") as f:
-            f.write("Install Order:\n")
-            for func in install_order:
-                f.write(func_to_original[func] + "\n")
-            f.write("\nDependencies:\n")
-            for func in sorted(all_defined_funcs):
-                deps = sorted([d for d in func_to_deps[func] if d in all_defined_funcs])
-                if deps:
-                    dep_names = [func_to_original[d] for d in deps]
-                    f.write(f"{func_to_original[func]}: [{', '.join(f'\"{d}\"' for d in dep_names)}]\n")
+        with open("bq/app/dependencies.yaml", "w") as f:
+            yaml.dump(yaml_output, f, default_flow_style=False, sort_keys=False)
     else:
         stuck = all_defined_funcs - set(install_order)
         print("\n--- ERROR: CYCLE OR MISSING DEPS ---", file=sys.stderr)
