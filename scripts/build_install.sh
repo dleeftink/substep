@@ -6,21 +6,26 @@
 
 OUTPUT_FILE="bq/app/install.sql"
 MINIFY=false
+EXCLUDED_NAMESPACES="app,try"
 mkdir -p bq/app
 
 # Parse CLI arguments
 while [[ "$#" -gt 0 ]]; do
     case $1 in
         -m|--minify) MINIFY=true ;;
+        -e|--excluded-namespaces) 
+            EXCLUDED_NAMESPACES="$2"
+            shift 2
+            ;;
         -h|--help) 
             echo "Usage: $0 [options]"
             echo "Options:"
-            echo "  -m, --minify    Enable SQL minification"
+            echo "  -m, --minify            Enable SQL minification"
+            echo "  -e, --excluded-namespaces  Comma-separated list of namespaces to exclude (default: $EXCLUDED_NAMESPACES)"
             exit 0
             ;;
         *) echo "Unknown parameter: $1"; exit 1 ;;
     esac
-    shift
 done
 
 get_topological_order() {
@@ -63,7 +68,7 @@ append_clean_sql() {
 echo "-- Generated BigQuery Install Script" > "$OUTPUT_FILE"
 
 # Generate dependency file
-python3 scripts/topo_sort.py
+python3 scripts/topo_sort.py "$EXCLUDED_NAMESPACES"
 if [ ! -f "bq/app/dependencies.yaml" ]; then
     echo "Error: dependencies.yaml not found."
     exit 1

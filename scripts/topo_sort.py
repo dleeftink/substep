@@ -43,16 +43,15 @@ def extract_functions_and_deps(sql_content, valid_namespaces):
             
     return current_func_lower, current_func_original, deps_lower
 
-def main():
+def main(excluded_namespaces):
     bq_dir = "bq"
-    exclude_dirs = {"app", "try"}
     if not os.path.exists(bq_dir):
         print(f"Error: {bq_dir} not found", file=sys.stderr)
         return
 
     namespaces = [
         d.lower() for d in os.listdir(bq_dir) 
-        if os.path.isdir(os.path.join(bq_dir, d)) and d.lower() not in exclude_dirs
+        if os.path.isdir(os.path.join(bq_dir, d)) and d.lower() not in excluded_namespaces
     ]
     
     graph = defaultdict(set)      # callee -> set of callers
@@ -64,7 +63,7 @@ def main():
     # Build the graph
     for root, dirs, files in os.walk(bq_dir):
         # Skip excluded directories
-        dirs[:] = [d for d in dirs if d.lower() not in exclude_dirs]
+        dirs[:] = [d for d in dirs if d.lower() not in excluded_namespaces]
         
         for file in files:
             if file.endswith('.sql'):
@@ -144,4 +143,9 @@ def main():
         sys.exit(1)
 
 if __name__ == "__main__":
-    main()
+    import sys
+    if len(sys.argv) > 1:
+        excluded_namespaces = sys.argv[1].split(',')
+        main(excluded_namespaces)
+    else:
+        main([])
