@@ -1,46 +1,5 @@
 {
   "name": "supdev",
-  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-22.04",
-  "features": {
-    /*"ghcr.io/devcontainers/features/common-utils:1": {
-        "installZsh": true,
-        "configureZshAsDefaultShell": false
-    }*/
-    "ghcr.io/devcontainers/features/git:1": {},
-    "ghcr.io/devcontainers/features/python:1": {
-      "version": "latest",
-      "installTools": false
-    },
-    "ghcr.io/devcontainers/features/node:2.0.0": {
-      "version": "latest"
-    }
-  },
-  "postCreateCommand": "curl -fsSL https://raw.githubusercontent.com/continuedev/continue/main/extensions/cli/scripts/install.sh | bash && pip install -r dev-requirements.txt",
-  "mounts": [
-    {
-      "source": "${localEnv:USERPROFILE}/.continue",
-      "target": "/home/vscode/.continue",
-      "type": "bind"
-    }
-  ],
-  "customizations": {
-    "vscode": {
-      "extensions": [
-        "ms-python.python",
-        "Continue.continue"
-      ],
-      "settings": {
-        // "python.terminal.activateEnvInSelectedTerminal": true,
-        "terminal.integrated.defaultProfile.linux": "bash",
-        "files.autoSave": "afterDelay",
-        "remote.extensionKind": {
-          "Continue.continue": [
-            "workspace","ui"
-          ]
-        }
-      }
-    }
-  },
-  "remoteUser": "vscode"
-}
-
+  "image": "docker.io/suptext/substep-dev-image:0.1.0",
+  "postCreateCommand": "pip install -r dev-requirements.txt"
+} 
