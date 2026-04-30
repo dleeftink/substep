@@ -1,0 +1,4 @@
+{
+  "name": "supdev",
+  "image": "docker.io/suptext/substep-dev-image:0.1.0"
+}
