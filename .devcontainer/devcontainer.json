@@ -6,6 +6,9 @@
     "ghcr.io/devcontainers/features/python:1": {
       "version": "latest",
       "installTools": false
+    },
+    "ghcr.io/devcontainers/features/node:2.0.0": {
+      "version": "latest"
     }
   },
   "mounts": [
@@ -27,7 +30,7 @@
         "files.autoSave": "afterDelay",
         "remote.extensionKind": {
           "Continue.continue": [
-            "workspace"
+            "workspace","ui"
           ]
         }
       }
@@ -35,3 +38,4 @@
   },
   "remoteUser": "vscode"
 }
+
