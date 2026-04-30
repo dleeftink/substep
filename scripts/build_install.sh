@@ -1,6 +1,9 @@
 #!/bin/bash
 # Concatenates SQL files in topological order for BigQuery installation
 
+# to run: ./scripts/build_install.sh
+# windows: tr -d '\r' < ./scripts/build_install.sh | bash
+
 OUTPUT_FILE="bq/app/install.sql"
 MINIFY=false # Default to false for safer debugging
 mkdir -p bq/app
