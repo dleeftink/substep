@@ -5,7 +5,7 @@
 # windows: tr -d '\r' < ./scripts/build_install.sh | bash
 
 OUTPUT_FILE="bq/app/install.sql"
-MINIFY=false # Default to false for safer debugging
+MINIFY=false
 mkdir -p bq/app
 
 # Parse CLI arguments
@@ -15,46 +15,33 @@ while [[ "$#" -gt 0 ]]; do
         -h|--help) 
             echo "Usage: $0 [options]"
             echo "Options:"
-            echo "  -m, --minify    Enable SQL minification (string-safe)"
-            echo "  -h, --help      Show this help menu"
+            echo "  -m, --minify    Enable SQL minification"
             exit 0
             ;;
-        *) echo "Unknown parameter passed: $1"; exit 1 ;;
+        *) echo "Unknown parameter: $1"; exit 1 ;;
     esac
     shift
 done
 
-# Clear and initialize output file
-echo "-- Generated BigQuery Install Script" > "$OUTPUT_FILE"
+get_topological_order() {
+    python3 -c "
+import yaml, sys
+try:
+    with open('bq/app/dependencies.yaml') as f:
+        data = yaml.safe_load(f)
+        for func in data['install_order']:
+            print(f\"{data['path_map'][func]}|{func}\")
+except Exception as e:
+    print(f'Error reading dependencies: {e}', file=sys.stderr)
+    sys.exit(1)
+"
+}
 
-# Run Python script to generate dependency.yaml
-python3 scripts/topo_sort.py
-
-if [ ! -f "bq/app/dependencies.yaml" ]; then
-    echo "Error: Topological sort failed to generate bq/dependency.yaml."
-    exit 1
-fi
-
-# Extract install order and path map once to avoid repeated python calls
-# We'll use a temporary file to store path|function_name pairs in install order
-TEMP_ORDER=$(mktemp)
-python3 -c "
-import yaml
-with open('bq/app/dependencies.yaml') as f:
-    data = yaml.safe_load(f)
-    order = data['install_order']
-    paths = data['path_map']
-    for func in order:
-        print(f\"{paths[func]}|{func}\")
-" > "$TEMP_ORDER"
-
-# Function to clean, minify, and append
 append_clean_sql() {
     local file_path=$1
     echo -e "\n-- Source: $file_path" >> "$OUTPUT_FILE"
     
     if [ "$MINIFY" = true ]; then
-        # MINIFICATION WITH STRING PROTECTION:
         perl -0777 -pe '
             s/\/\*.*?\*\///gs; 
             s/--.*//g;
@@ -63,28 +50,40 @@ append_clean_sql() {
             s/;\s*$//;
         ' "$file_path" >> "$OUTPUT_FILE"
     else
-        # Just strip comments and trailing semicolons
         perl -0777 -pe 's/\/\*.*?\*\///gs; s/--.*//g' "$file_path" | \
         sed -e 's/[[:space:];]*$//' >> "$OUTPUT_FILE"
     fi
-    
     echo -e ";" >> "$OUTPUT_FILE"
 }
+
+# ---
+# Execution
+# ---
+
+echo "-- Generated BigQuery Install Script" > "$OUTPUT_FILE"
+
+# Generate dependency file
+python3 scripts/topo_sort.py
+if [ ! -f "bq/app/dependencies.yaml" ]; then
+    echo "Error: dependencies.yaml not found."
+    exit 1
+fi
+
+# Store the order in a variable to avoid multiple disk reads or Python calls
+ORDER_LIST=$(get_topological_order)
 
 echo -e "\n-- META FUNCTIONS" >> "$OUTPUT_FILE"
 while IFS="|" read -r path func; do
     if [[ "$path" == *"_meta.sql" ]]; then
         append_clean_sql "$path"
     fi
-done < "$TEMP_ORDER"
+done <<< "$ORDER_LIST"
 
 echo -e "\n-- CORE FUNCTIONS (DEPENDENCY ORDER)" >> "$OUTPUT_FILE"
 while IFS="|" read -r path func; do
     if [[ "$path" != *"_meta.sql" ]]; then
         append_clean_sql "$path"
     fi
-done < "$TEMP_ORDER"
-
-rm "$TEMP_ORDER"
+done <<< "$ORDER_LIST"
 
 echo "Install file generated: $OUTPUT_FILE (Minify: $MINIFY)"
