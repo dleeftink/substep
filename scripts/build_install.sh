@@ -78,6 +78,13 @@ if [ ! -f "bq/app/dependencies.yaml" ]; then
     exit 1
 fi
 
+echo "/*" > "$OUTPUT_FILE"
+echo "  BigQuery Dependency Tree" >> "$OUTPUT_FILE"
+echo "  Generated: $(date)" >> "$OUTPUT_FILE"
+echo "  -------------------------------------------" >> "$OUTPUT_FILE"
+python3 scripts/build_tree.py | sed 's/^/  /' >> "$OUTPUT_FILE"
+echo "*/" >> "$OUTPUT_FILE"
+
 # Store the order in a variable to avoid multiple disk reads or Python calls
 ORDER_LIST=$(get_topological_order)
 

@@ -1,4 +1,37 @@
--- Generated BigQuery Install Script
+/*
+  BigQuery Dependency Tree
+  Generated: Sat May  2 10:46:50 AM UTC 2026
+  -------------------------------------------
+  Project Dependency Tree
+  ───────────────────────
+  ├─ cue.meta
+  ├─ def.meta
+  ├─ fix.meta
+  ├─ get.meta
+  ├─ lay.meta
+  ├─ map.meta
+  ├─ use.meta
+  └─ use.parser
+      ├─ get.jsonStringMask
+      │   ├─ fix.jsonTuples
+      │   ├─ get.jsonStringFromStruct
+      │   └─ map.jsonSafeGuards
+      │       └─ fix.jsonSafeGuards
+      ├─ get.unrolled
+      │   ├─ fix.jsonPrimitives
+      │   └─ use.unroller
+      │       ├─ get.characterIndices
+      │       ├─ get.jsonObjectBoundaries
+      │       │   └─ get.jsonObjectMetadata
+      │       │       ├─ cue.jsonObjectInterface
+      │       │       │   ├─ get.jsonKeyFragment
+      │       │       │   └─ get.jsonObjectFragment
+      │       │       │       └─ lay.jsonPrimitives
+      │       │       ├─ fix.jsonKeyFragment
+      │       │       └─ get.jsonKeyIndex
+      │       └─ map.objectContainment
+      └─ lay.jsonSafeGuards
+*/
 
 -- META FUNCTIONS
 
