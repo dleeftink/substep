@@ -12,7 +12,10 @@ mkdir -p bq/app
 # Parse CLI arguments
 while [[ "$#" -gt 0 ]]; do
     case $1 in
-        -m|--minify) MINIFY=true ;;
+        -m|--minify) 
+            MINIFY=true 
+            shift  # This moves $2 into the $1 position
+            ;;
         -e|--excluded-namespaces) 
             EXCLUDED_NAMESPACES="$2"
             shift 2
@@ -26,6 +29,7 @@ while [[ "$#" -gt 0 ]]; do
             ;;
         *) echo "Unknown parameter: $1"; exit 1 ;;
     esac
+
 done
 
 get_topological_order() {
