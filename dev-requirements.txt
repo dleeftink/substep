@@ -1,4 +1,1 @@
 PyYAML
-networkx
-matplotlib
-graphviz
