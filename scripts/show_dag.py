@@ -1,29 +1,24 @@
-import networkx as nx
-import matplotlib.pyplot as plt
+import graphviz
 import yaml
 
-# Load the dependencies.yaml file
+# 1. Load the dependencies.yaml file
 with open('bq/app/dependencies.yaml', 'r') as f:
-    dependencies = yaml.safe_load(f)
+    data = yaml.safe_load(f)
+    dependencies = data.get('dependencies', {})
 
-# Create a directed graph
-G = nx.DiGraph()
+# 2. Create a directed graph object
+# rankdir='LR' makes it flow Left-to-Right; use 'TB' for Top-to-Bottom
+dot = graphviz.Digraph('DAG', format='svg', graph_attr={'rankdir': 'LR'})
 
-# Add nodes and edges to the graph
-for task, deps in dependencies['dependencies'].items():
-    G.add_node(task)
+# 3. Add nodes and edges
+for task, deps in dependencies.items():
+    # Style the node (e.g., box with rounded corners)
+    dot.node(task, shape='box', style='rounded')
+    
     for dep in deps:
-        G.add_edge(dep, task)
+        dot.edge(dep, task)
 
-# Remove orphans (nodes with no incoming or outgoing edges)
-orphans = [node for node in G.nodes() if G.in_degree(node) == 0 and G.out_degree(node) == 0]
-G.remove_nodes_from(orphans)
-
-# Position the nodes in the graph using the multipartite layout
-pos = nx.spring_layout(G)
-
-# Draw the graph and save as SVG
-plt.figure(figsize=(10, 6))
-plt.axis('off')
-nx.draw(G, pos, with_labels=True, node_color='lightblue', edge_color='gray')
-plt.savefig('bq/app/dag.svg', format='svg')
+# 4. Render to a file
+# This creates 'bq/app/dag.svg' and 'bq/app/dag.gv'
+# Set cleanup=True to delete the intermediate .gv file automatically
+dot.render('bq/app/dag', cleanup=True)

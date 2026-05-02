@@ -1,3 +1,4 @@
 PyYAML
 networkx
 matplotlib
+graphviz

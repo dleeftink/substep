@@ -1,7 +1,7 @@
 {
   "name": "supdev",
   "image": "docker.io/suptext/substep-dev-image:0.1.0",
-  "postCreateCommand": "pip install -r dev-requirements.txt"
+  "postCreateCommand": "pip install -r dev-requirements.txt && sudo apt-get update && sudo apt-get install -y graphviz"
   // "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached",
   // "workspaceFolder": "/workspace",
   // "mounts": [
