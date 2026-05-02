@@ -9,7 +9,7 @@ Generally these functions are for internal use only but may find utility elsewhe
 ## Architecture
 
 ``` mermaid
-graph BT
+graph RL
     cue.jsonObjectInterface((cue.jsonObjectInterface))
     cue.meta[cue.meta]
     def.meta[def.meta]
