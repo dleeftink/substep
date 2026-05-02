@@ -10,7 +10,7 @@ Generally these functions are for internal use only but may find utility elsewhe
 
 ``` mermaid
 graph RL
-    cue.jsonObjectInterface((cue.jsonObjectInterface))
+    cue.jsonObjectInterface([cue.jsonObjectInterface])
     cue.meta[cue.meta]
     def.meta[def.meta]
     fix.jsonKeyFragment[fix.jsonKeyFragment]
@@ -21,17 +21,17 @@ graph RL
     get.characterIndices[get.characterIndices]
     get.jsonKeyFragment[get.jsonKeyFragment]
     get.jsonKeyIndex[get.jsonKeyIndex]
-    get.jsonObjectBoundaries((get.jsonObjectBoundaries))
-    get.jsonObjectFragment((get.jsonObjectFragment))
-    get.jsonObjectMetadata((get.jsonObjectMetadata))
+    get.jsonObjectBoundaries([get.jsonObjectBoundaries])
+    get.jsonObjectFragment([get.jsonObjectFragment])
+    get.jsonObjectMetadata([get.jsonObjectMetadata])
     get.jsonStringFromStruct[get.jsonStringFromStruct]
-    get.jsonStringMask((get.jsonStringMask))
+    get.jsonStringMask([get.jsonStringMask])
     get.meta[get.meta]
     get.unrolled((get.unrolled))
     lay.jsonPrimitives[lay.jsonPrimitives]
     lay.jsonSafeGuards[lay.jsonSafeGuards]
     lay.meta[lay.meta]
-    map.jsonSafeGuards((map.jsonSafeGuards))
+    map.jsonSafeGuards([map.jsonSafeGuards])
     map.meta[map.meta]
     map.objectContainment[map.objectContainment]
     use.meta[use.meta]
