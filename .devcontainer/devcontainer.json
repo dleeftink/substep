@@ -3,5 +3,8 @@
   "image": "docker.io/suptext/substep-dev-image:0.1.0",
   "postCreateCommand": "pip install -r dev-requirements.txt"
   // "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached",
-  // "workspaceFolder": "/workspace"
+  // "workspaceFolder": "/workspace",
+  // "mounts": [
+  //   "source=D:/User Files/GitHub/substep,target=/home/vscode/substep-mirr,type=bind,consistency=cached",
+  // ]
 } 
