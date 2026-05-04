@@ -1,3 +1,5 @@
+-- TVF Candidate
+
 create or replace function get.unrolled(jsn STRING, pairs array<struct<open STRING, close STRING>>, upto INT) as (
   (jsn).(fix.jsonPrimitives)().(use.unroller)(pairs,upto)
 ) OPTIONS (

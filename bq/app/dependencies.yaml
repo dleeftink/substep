@@ -1,0 +1,103 @@
+install_order:
+- fix.jsonKeyFragment
+- fix.jsonPrimitives
+- fix.jsonSafeGuards
+- fix.jsonTuples
+- get.characterIndices
+- get.jsonKeyFragment
+- get.jsonKeyIndex
+- get.jsonStringFromStruct
+- lay.jsonPrimitives
+- get.jsonObjectFragment
+- cue.jsonObjectInterface
+- get.jsonObjectMetadata
+- get.jsonObjectBoundaries
+- lay.jsonSafeGuards
+- map.jsonSafeGuards
+- get.jsonStringMask
+- map.objectContainment
+- use.unroller
+- get.unrolled
+- cue.meta
+- def.meta
+- fix.meta
+- get.meta
+- lay.meta
+- map.meta
+- use.meta
+- use.parser
+dependencies:
+  fix.jsonKeyFragment: []
+  fix.jsonPrimitives: []
+  fix.jsonSafeGuards: []
+  fix.jsonTuples: []
+  get.characterIndices: []
+  get.jsonKeyFragment: []
+  get.jsonKeyIndex: []
+  get.jsonStringFromStruct: []
+  lay.jsonPrimitives: []
+  get.jsonObjectFragment:
+  - lay.jsonPrimitives
+  cue.jsonObjectInterface:
+  - get.jsonKeyFragment
+  - get.jsonObjectFragment
+  get.jsonObjectMetadata:
+  - cue.jsonObjectInterface
+  - fix.jsonKeyFragment
+  - get.jsonKeyIndex
+  get.jsonObjectBoundaries:
+  - get.jsonObjectMetadata
+  lay.jsonSafeGuards: []
+  map.jsonSafeGuards:
+  - fix.jsonSafeGuards
+  get.jsonStringMask:
+  - fix.jsonTuples
+  - get.jsonStringFromStruct
+  - map.jsonSafeGuards
+  map.objectContainment: []
+  use.unroller:
+  - get.characterIndices
+  - get.jsonObjectBoundaries
+  - map.objectContainment
+  get.unrolled:
+  - fix.jsonPrimitives
+  - use.unroller
+  cue.meta: []
+  def.meta: []
+  fix.meta: []
+  get.meta: []
+  lay.meta: []
+  map.meta: []
+  use.meta: []
+  use.parser:
+  - get.jsonStringMask
+  - get.unrolled
+  - lay.jsonSafeGuards
+path_map:
+  fix.jsonKeyFragment: bq/fix/jsonKeyFragment.sql
+  fix.jsonPrimitives: bq/fix/jsonPrimitives.sql
+  fix.jsonSafeGuards: bq/fix/jsonSafeGuards.sql
+  fix.jsonTuples: bq/fix/jsonTuples.sql
+  get.characterIndices: bq/get/characterIndices.sql
+  get.jsonKeyFragment: bq/get/jsonKeyFragment.sql
+  get.jsonKeyIndex: bq/get/jsonKeyIndex.sql
+  get.jsonStringFromStruct: bq/get/jsonStringFromStruct.sql
+  lay.jsonPrimitives: bq/lay/jsonPrimitives.sql
+  get.jsonObjectFragment: bq/get/jsonObjectFragment.sql
+  cue.jsonObjectInterface: bq/cue/jsonObjectInterface.sql
+  get.jsonObjectMetadata: bq/get/jsonObjectMetadata.sql
+  get.jsonObjectBoundaries: bq/get/jsonObjectBoundaries.sql
+  lay.jsonSafeGuards: bq/lay/jsonSafeGuards.sql
+  map.jsonSafeGuards: bq/map/jsonSafeGuards.sql
+  get.jsonStringMask: bq/get/jsonStringMask.sql
+  map.objectContainment: bq/map/objectContainment.sql
+  use.unroller: bq/use/unroller.sql
+  get.unrolled: bq/get/unrolled.sql
+  cue.meta: bq/cue/_meta.sql
+  def.meta: bq/def/_meta.sql
+  fix.meta: bq/fix/_meta.sql
+  get.meta: bq/get/_meta.sql
+  lay.meta: bq/lay/_meta.sql
+  map.meta: bq/map/_meta.sql
+  use.meta: bq/use/_meta.sql
+  use.parser: bq/use/parser.sql

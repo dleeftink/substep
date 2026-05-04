@@ -1,3 +1,5 @@
+-- TVF Candidate
+
 create or replace function use.unroller(jsn STRING, pairs array<struct<open STRING, close STRING>>, pick INT) as ((
   
   with init as (

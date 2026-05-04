@@ -1,3 +1,7 @@
+-- TVF candidate:
+-- input: a column of array character indices
+-- output: 
+
 create or replace table function map.objectContainment(input table<idx INT, sub STRING>, pairs array<struct<open STRING, close STRING>>) as (
   
   with locs as (
