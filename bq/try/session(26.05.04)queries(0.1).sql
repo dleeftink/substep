@@ -1,4 +1,4 @@
--- this patterns triggers proper query planning, but introduces high amount of shuflling
+-- this patterns triggers proper query plan unrolling, but introduces high amount of shuflling
 
 create or replace table function tmp.jsonObjectLevelProcessor1(
   input table<jsn string,a int,b int, level array<struct<slot int,pin bool,raise bool,idx int,sub string, nest int >>>, pick int
@@ -33,6 +33,61 @@ create or replace table function tmp.jsonObjectLevelProcessor1(
   select jsn,array_agg((select as struct objs.* except(jsn))) level from keys as objs -- order by sig,depth
   group by jsn
   
+);
+
+-- does not trigger proper query plan unrolling, but shuffles are minimised
+
+create or replace table function tmp.jsonObjectLevelProcessor2(
+  input table<jsn string,a int,b int, level array<struct<slot int,pin bool,raise bool,idx int,sub string, nest int >>>, pick int
+) as (
+
+  with  init as (
+
+    select jsn,array(
+      from unnest(level) as obj
+      |> aggregate min_by(obj,pin) head,max_by(obj,pin) tail group by slot,raise
+      |> extend get.jsonKeyIndex(jsn,head.idx) as kpos
+      |> select cue.jsonObjectInterface(a,b,jsn,head,tail,slot,kpos).*
+
+      |> set arr_sym = (key).regexp_extract(r'\:([\[\{]+)').ifnull(key), sym = right(key,1) 
+      |> set arr_ctx = if(left(arr_sym,1) = '[' and substring(arr_sym,2,1) in ('[','{'),1,0)
+  
+    
+      |> set key = fix.jsonKeyFragment(key)
+      |> set key = if(key='#',(json).translate('{}"','').regexp_extract(r'^([^:]+)'),key), sym = if(key='#',key,sym)
+      |> set key = coalesce(key,last_value(if(not raise,key,null) ignore nulls) over(partition by depth order by open))
+      |> select as struct *
+
+    ) as level from input
+
+  ),
+
+  fill as (
+
+   select * except(level) from init get,get.level
+     |> set acid = sum(arr_ctx) over(partition by raise,/*depth*/ nest order by slot),  -- investigate nest instead of depth for better handling of nested arrays
+             ocid = row_number() over(partition by raise,depth,key order by open)-1
+     |> set ecid = row_number() over(partition by raise,ocid order by open)-1
+  
+     |> set list = if(arr_sym in ("[{","[[") and sym in ("[","{"),true,null)
+     |> set list = coalesce(first_value(list ignore nulls) over(partition by raise,acid order by depth,slot),false)
+  
+     |> set key = if(open = 1 and key is null,'$',key)
+     |> set key = if(list,concat(coalesce(key,''),'[',row_number() over(partition by raise,depth,acid order by slot)-1,']'),key)
+     |> set ord = concat('@{',ocid,',',ecid,'}')
+   
+
+     |> as objs
+     |> extend (select as struct objs.* except(jsn,raise,pre,depth,kpos,arr_sym,arr_ctx)) as obj,
+     |> aggregate
+        array_agg(if(raise,obj,null) ignore nulls order by obj.open) children,
+        array_agg(if(not raise,obj,null) ignore nulls order by obj.open) parents,
+        array_agg(if(not raise,obj.close,null) ignore nulls order by obj.open) looks group by jsn,depth
+  
+  )
+
+  select * from init
+
 );
 
 -- Source: bq/use/unroller.sql
