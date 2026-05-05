@@ -53,25 +53,34 @@ create temp function parsed(object any type,maxDepth int) as ((
     select src,array(
       select pid, (path).LEFT(LENGTH(path) - (uid_len-1)).split('&'||uid) path
       from unnest(paths) path with offset pid 
-      --|> cross join unnest(path) p with offset depth
-      --|> select pid,depth,(p).split('?'||uid) dat 
-      --|> extend dat[safe_offset(0)].ltrim('."').ltrim('".') as key,dat[safe_offset(1)].ltrim('&').split('&') as meta
-      --|> select as struct pid,depth,key,cast(meta[safe_offset(0)].split('=')[safe_offset(1)] as int) as idx,cast(meta[safe_offset(1)].split('=')[safe_offset(1)] as int) as loc
-      --|> order by pid,depth,idx,loc
       |> set path = array(
           select depth,(p).split('?'||uid) dat from unnest(path) p with offset depth
           |> extend dat[safe_offset(0)].ltrim('."').ltrim('".') as key,dat[safe_offset(1)].ltrim('&').split('&') as meta
-          |> select as struct pid,depth,key,cast(meta[0].split('=')[1] as int) as idx,cast(meta[1].split('=')[1] as int) as open,cast(meta[2].split('=')[1] as int) as close
-          |> order by pid,depth,idx,open,close
+          |> select pid,depth,key,cast(meta[0].split('=')[1] as int) as idx,cast(meta[1].split('=')[1] as int) as open,cast(meta[2].split('=')[1] as int) as close
+          |> extend substr(src,open,close-open) as part
+          |> select as struct *
+          -- |> order by depth,open
         )
-      |> select as struct *
+      |> cross join unnest(path) p  
+      |> aggregate array_agg(p.pid) pids group by depth,key,idx,open,close,part
+      |> extend struct(lead(open) over(order by depth,open) as open) as nex
+      |> extend if(nex.open>close,nex.open-close,length(src)-close) as tgt
+      |> extend substr(src,close,tgt) part2
+      |> set part2 = if((part2).left(1) in ('[','{'), part2, 
+          substr(part2, 1, least(
+            ifnull(nullif(strpos(part2, '}'), 0), length(part2) + 1),
+            ifnull(nullif(strpos(part2, ']'), 0), length(part2) + 1),
+            ifnull(nullif(strpos(part2, ','), 0), length(part2) + 1)
+          ) - 1)
+        )
+      |> select as struct * except(pids)
+      |> order by depth,open
     ) fragment
     from prep
 
   )
 
   select as struct * from frag
-  
 ));
 
 
@@ -156,12 +165,12 @@ real as (
   select
     --get.jsonStringMask(hits[safe_offset(0)]) jsn 
     --use.parser(hits.product[safe_offset(0)],10) dat
-    hits.product[safe_offset(0)] blob
+    hits[safe_offset(0)]/*.product[safe_offset(0)]*/ blob
   from (
-    select * from `stack-curves.tables.hits` -- limit 128
-  ) get, get.hits
+    select * from `stack-curves.tables.hits` limit 64
+  ) get--, get.hits
 )
 
 
---select parsed(blob,5) jsn from real  -- where blob.productSKU = 'GGOEGAAX0098'
+-- select parsed(blob,5) jsn from real  -- where blob.productSKU = 'GGOEGAAX0098'
 select parsed(blob,10) jsn from opts3
