@@ -7,8 +7,9 @@ create temp function enumKeys(jsn STRING, uid STRING) AS ((
   select array_to_string(
     array(
 
+      -- maybe encode as json..
       select if(right(part,1)!= '#', part /*|| '?node=' || generate_uuid().left(8)*/ 
-      || '?' || uid || '&idx=' || i || '&end=' || sum(length(part)) over(order by i) || '&' || uid || '":',(part).rtrim('#')) part
+      || '?' || uid || '&idx=' || i || '&open=' || sum(length(part)) over(order by i) || '&' || uid || '":',(part).rtrim('#')) part
       FROM UNNEST(SPLIT(jsn||'#', '":')) AS part WITH OFFSET i
       
     ), ''
@@ -31,7 +32,7 @@ create temp function parsed(object any type,maxDepth int) as ((
   with init as (
     select *,(str).parse_json() jsn from (
       select src,(src).enumKeys(uid).(layJsonSafeGuards)() str,uid from (  
-        select (object).(jsonStringMask)() src, 'uid=v'||generate_uuid().left(3) uid
+        select (object).(jsonStringMask)() src, 'uid=v'||generate_uuid().left(6) uid
       )
     )
   ),
@@ -46,17 +47,26 @@ create temp function parsed(object any type,maxDepth int) as ((
   frag as (
 
     select *,array(
-     
-      select as struct substr(path,kpos+sign(kpos)*uid_len,qpos-kpos-sign(kpos)*uid_len).ltrim('"').rtrim('?'),substr(path,qpos+uid_len) from (  
-        select path,INSTR(path, '?'||uid, -1) qpos,
-           INSTR(path, '&'||uid, - uid_len - 2) kpos
-        from unnest(paths) path
-      )
-    ) nodes from prep
-  
+      select pid, (path).LEFT(LENGTH(path) - (uid_len-1)).split('&'||uid) path
+      from unnest(paths) path with offset pid 
+      --|> cross join unnest(path) p with offset depth
+      --|> select pid,depth,(p).split('?'||uid) dat 
+      --|> extend dat[safe_offset(0)].ltrim('."').ltrim('".') as key,dat[safe_offset(1)].ltrim('&').split('&') as meta
+      --|> select as struct pid,depth,key,cast(meta[safe_offset(0)].split('=')[safe_offset(1)] as int) as idx,cast(meta[safe_offset(1)].split('=')[safe_offset(1)] as int) as loc
+      --|> order by pid,depth,idx,loc
+      |> set path = array(
+          select depth,(p).split('?'||uid) dat from unnest(path) p with offset depth
+          |> extend dat[safe_offset(0)].ltrim('."').ltrim('".') as key,dat[safe_offset(1)].ltrim('&').split('&') as meta
+          |> select as struct pid,depth,key,cast(meta[0].split('=')[1] as int) as idx,cast(meta[1].split('=')[1] as int) as open
+          |> order by pid,depth,idx,open
+        )
+      |> select as struct *
+    ) fragment
+    from prep
+
   )
 
-  select as struct * except(jsn) from frag
+  select as struct src,fragment from frag
 ));
 
 
@@ -86,7 +96,7 @@ opts2 as (
        "test3.hello", " {'a': [2]} ",
       1,2.0,3,--4,
       --"1",--"2","3","4",
-      ('span', (1,(1,(1,(1,(1)))))),
+      ('span.test', (1,(1,(1,(1,(1)))))),
       ('kern',(1,'inner',3,"binner"),struct([1.0, 1, 2] /*as ok*/,struct(0 as test,struct([1,2,3] as ntmp,parse_json('[1,2,[2,3]]')) as b) /*as tmp*/, null as oi,('text', "('zi',1)"),struct(1 as v) as io,(struct("a" as b),struct(1 as c)))),
       ('text',  (struct("a" as b),struct(1 as c))),        -- Nested lookalike
       ('comma', "a, b, c"),         -- Internal comma
@@ -98,16 +108,55 @@ opts2 as (
     ) as blob
 ),
 
+opts3 as (
+
+  select [
+    
+    -- [0]
+    struct(1 as id, 
+      [ -- [0]
+        struct("a" as sub,2 as val,[
+          -- [0]
+          struct(1 as x,2 as y),
+          (1,2)
+        ] as nest), 
+        -- [1]
+        ("b",5, [
+          -- [0]
+          (2,3)
+        ])
+      ],
+    1 as uid), 
+    
+    -- [1]
+    struct(2, 
+      [ -- [0]
+        ("c",4,[
+          -- [0]
+          (3,4)
+        ]), 
+        -- [1]
+        ("d",5,[
+          -- [0]
+          (5,6)
+        ])
+      ],
+    2)
+
+  ] as blob
+
+),
+
 real as (
   select
     --get.jsonStringMask(hits[safe_offset(0)]) jsn 
     --use.parser(hits.product[safe_offset(0)],10) dat
     hits.product[safe_offset(0)] blob
   from (
-    select * from `stack-curves.tables.hits` limit 512
+    select * from `stack-curves.tables.hits` -- limit 128
   ) get, get.hits
 )
 
 
--- select parsed(blob,10) jsn from real  -- where blob.productSKU = 'GGOEGAAX0098'
-select parsed(blob,10) jsn from opts2 
+--select parsed(blob,5) jsn from real  -- where blob.productSKU = 'GGOEGAAX0098'
+select parsed(blob,10) jsn from opts3
