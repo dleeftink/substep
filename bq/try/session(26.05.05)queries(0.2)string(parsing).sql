@@ -1,12 +1,14 @@
 create temp function jsonTuples(jsn STRING) as (
   (jsn).regexp_replace(r'""\:"?([^\{\}\[\]]*?)"?\,""\:([^\{\}\[\]]*?)',r'"\1":\2')  -- move quoted keys/values into empty key position and mark insertion point
+     .replace('"":','"undefined":')
 );
 
-create temp function enumKeys(jsn STRING) AS ((
+create temp function enumKeys(jsn STRING, uid STRING) AS ((
   select array_to_string(
     array(
 
-      select if(right(part,1)!= '#', part /*|| '?node=' || generate_uuid().left(8)*/ || '?idx=' || i || '&end=' || sum(length(part)) over(order by i) || '":',(part).rtrim('#')) part
+      select if(right(part,1)!= '#', part /*|| '?node=' || generate_uuid().left(8)*/ 
+      || '?' || uid || '&idx=' || i || '&end=' || sum(length(part)) over(order by i) || '&' || uid || '":',(part).rtrim('#')) part
       FROM UNNEST(SPLIT(jsn||'#', '":')) AS part WITH OFFSET i
       
     ), ''
@@ -28,15 +30,15 @@ create temp function parsed(object any type,maxDepth int) as ((
 
   with init as (
     select *,(str).parse_json() jsn from (
-      select src,(src).enumKeys().(layJsonSafeGuards)() str from (  
-        select (object).(jsonStringMask)() src
+      select src,(src).enumKeys(uid).(layJsonSafeGuards)() str,uid from (  
+        select (object).(jsonStringMask)() src, 'uid=v'||generate_uuid().left(3) uid
       )
     )
   ),
 
   prep as (
     
-    select src,jsn,(jsn).json_keys(maxDepth,mode=>"lax recursive") paths 
+    select *,(jsn).json_keys(maxDepth,mode=>"lax recursive") paths ,length(uid)+2 uid_len
     from init
     
   ),
@@ -44,8 +46,12 @@ create temp function parsed(object any type,maxDepth int) as ((
   frag as (
 
     select *,array(
-      select REGEXP_EXTRACT(path, r'([^.]+)$') 
-      from unnest(paths) path
+     
+      select as struct substr(path,kpos+sign(kpos)*uid_len,qpos-kpos-sign(kpos)*uid_len).ltrim('"').rtrim('?'),substr(path,qpos+uid_len) from (  
+        select path,INSTR(path, '?'||uid, -1) qpos,
+           INSTR(path, '&'||uid, - uid_len - 2) kpos
+        from unnest(paths) path
+      )
     ) nodes from prep
   
   )
@@ -77,7 +83,7 @@ with opts as (
 opts2 as (
 
   select (
-       "test3", " {'a': [2]} ",
+       "test3.hello", " {'a': [2]} ",
       1,2.0,3,--4,
       --"1",--"2","3","4",
       ('span', (1,(1,(1,(1,(1)))))),
