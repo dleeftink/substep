@@ -8,33 +8,16 @@ create temp function enumKeys(jsn STRING, uid STRING) AS ((
     array(
 
       -- maybe encode as json..
-      select if(right(part,1)!= '#', part /*|| '?node=' || generate_uuid().left(8)*/ 
+      select if(right(part,1)= ':', (part).rtrim('":') /*|| '?node=' || generate_uuid().left(8)*/ 
       || '?' || uid || '&idx=' || i 
-      || '&open=' || sum(length(part)) over(order by i) 
-      || '&close=' || sum(length(part)) over(order by i rows between unbounded preceding and 1 following) --.ifnull(sum(length(part)) over())
+      || '&open=' || (sum(length(part)) over(order by i rows between unbounded preceding and 1 preceding)+1).ifnull(0)
+      || '&close=' || (sum(length(part)) over(order by i)+1)
       -- || '&node=' || generate_uuid().left(8)
-      || '&' || uid || '":',(part).rtrim('#')) part
-      FROM UNNEST(SPLIT(jsn||'#', '":')) AS part WITH OFFSET i
+      || '&' || uid || '":',(part)) part
+      FROM UNNEST(SPLIT((jsn).replace('":','":>>').replace(',',',>>'), '>>')) AS part WITH OFFSET i
       
-    ), ''
+    ),''
   )
-)); 
-
-
-create temp function anumKeys(jsn STRING, uid STRING) AS ((
-  select 
-    array(
-
-      -- maybe encode as json..
-      select if(right(part,1)!= '#', part /*|| '?node=' || generate_uuid().left(8)*/ 
-      || '?' || uid || '&idx=' || i 
-      || '&open=' || sum(length(part)) over(order by i) 
-      || '&close=' || sum(length(part)) over(order by i rows between unbounded preceding and 1 following) --.ifnull(sum(length(part)) over())
-      -- || '&node=' || generate_uuid().left(8)
-      || '&' || uid || '":',(part).rtrim('#')) part
-      FROM UNNEST(SPLIT(jsn||'#', '":')) AS part WITH OFFSET i
-      
-    )
 )); 
 
 create temp function jsonStringMask(object ANY TYPE) as (
@@ -53,7 +36,7 @@ create temp function parsed(object any type,maxDepth int) as ((
   with init as (
     select *,(str).parse_json() jsn from (
       select src,(src).enumKeys(uid).(layJsonSafeGuards)() str,uid from (  
-        select (object).(jsonStringMask)() src, 'uid=v'||generate_uuid().left(6) uid
+        select (object).(jsonStringMask)() src, 'sid=v'||generate_uuid().left(3) uid
       )
     )
   ),
@@ -87,7 +70,8 @@ create temp function parsed(object any type,maxDepth int) as ((
 
   )
 
-  select as struct (src).anumKeys(uid) from init
+  select as struct * from frag
+  
 ));
 
 
