@@ -2,18 +2,19 @@ create temp function jsonTuples(jsn STRING) as (
   (jsn).regexp_replace(r'""\:"?([^\{\}\[\]]*?)"?\,""\:([^\{\}\[\]]*?)',r'"\1":\2')  -- move quoted keys/values into empty key position and mark insertion point
 );
 
-create temp function enumMissing(jsn STRING) AS ((
+create temp function enumKeys(jsn STRING) AS ((
   select array_to_string(
     array(
-      select if(i > 0, '"undefined_' || i || '":' || part, part)
-      FROM UNNEST(SPLIT(jsn, '"":')) AS part WITH OFFSET i
-      order by i
+
+      select if(right(part,1)!= '#', part /*|| '?node=' || generate_uuid().left(8)*/ || '?idx=' || i || '&end=' || sum(length(part)) over(order by i) || '":',(part).rtrim('#')) part
+      FROM UNNEST(SPLIT(jsn||'#', '":')) AS part WITH OFFSET i
+      
     ), ''
   )
 ));
 
 create temp function jsonStringMask(object ANY TYPE) as (
-  (object).(get.jsonStringFromStruct)().(map.jsonSafeGuards)(true).(jsonTuples)().(enumMissing)().(layJsonSafeGuards)()
+  (object).(get.jsonStringFromStruct)().(map.jsonSafeGuards)(true).(jsonTuples)() -- .(enumKeys)().(layJsonSafeGuards)()
 );
 
 CREATE temp FUNCTION layJsonSafeGuards(str STRING) AS (
@@ -25,9 +26,33 @@ CREATE temp FUNCTION layJsonSafeGuards(str STRING) AS (
 
 create temp function parsed(object any type,maxDepth int) as ((
 
-  select (object).(jsonStringMask)().(parse_json)().json_keys(maxDepth,mode=>"lax recursive")
+  with init as (
+    select *,(str).parse_json() jsn from (
+      select src,(src).enumKeys().(layJsonSafeGuards)() str from (  
+        select (object).(jsonStringMask)() src
+      )
+    )
+  ),
 
+  prep as (
+    
+    select src,jsn,(jsn).json_keys(maxDepth,mode=>"lax recursive") paths 
+    from init
+    
+  ),
+
+  frag as (
+
+    select *,array(
+      select REGEXP_EXTRACT(path, r'([^.]+)$') 
+      from unnest(paths) path
+    ) nodes from prep
+  
+  )
+
+  select as struct * except(jsn) from frag
 ));
+
 
 with opts as (
 
@@ -78,5 +103,5 @@ real as (
 )
 
 
-select parsed(blob,1) jsn from real  -- where blob.productSKU = 'GGOEGAAX0098'
---select parsed(blob) jsn from opts2 
+-- select parsed(blob,10) jsn from real  -- where blob.productSKU = 'GGOEGAAX0098'
+select parsed(blob,10) jsn from opts2 
