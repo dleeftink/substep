@@ -9,12 +9,33 @@ create temp function enumKeys(jsn STRING, uid STRING) AS ((
 
       -- maybe encode as json..
       select if(right(part,1)!= '#', part /*|| '?node=' || generate_uuid().left(8)*/ 
-      || '?' || uid || '&idx=' || i || '&open=' || sum(length(part)) over(order by i) || '&' || uid || '":',(part).rtrim('#')) part
+      || '?' || uid || '&idx=' || i 
+      || '&open=' || sum(length(part)) over(order by i) 
+      || '&close=' || sum(length(part)) over(order by i rows between unbounded preceding and 1 following) --.ifnull(sum(length(part)) over())
+      -- || '&node=' || generate_uuid().left(8)
+      || '&' || uid || '":',(part).rtrim('#')) part
       FROM UNNEST(SPLIT(jsn||'#', '":')) AS part WITH OFFSET i
       
     ), ''
   )
-));
+)); 
+
+
+create temp function anumKeys(jsn STRING, uid STRING) AS ((
+  select 
+    array(
+
+      -- maybe encode as json..
+      select if(right(part,1)!= '#', part /*|| '?node=' || generate_uuid().left(8)*/ 
+      || '?' || uid || '&idx=' || i 
+      || '&open=' || sum(length(part)) over(order by i) 
+      || '&close=' || sum(length(part)) over(order by i rows between unbounded preceding and 1 following) --.ifnull(sum(length(part)) over())
+      -- || '&node=' || generate_uuid().left(8)
+      || '&' || uid || '":',(part).rtrim('#')) part
+      FROM UNNEST(SPLIT(jsn||'#', '":')) AS part WITH OFFSET i
+      
+    )
+)); 
 
 create temp function jsonStringMask(object ANY TYPE) as (
   (object).(get.jsonStringFromStruct)().(map.jsonSafeGuards)(true).(jsonTuples)() -- .(enumKeys)().(layJsonSafeGuards)()
@@ -46,7 +67,7 @@ create temp function parsed(object any type,maxDepth int) as ((
 
   frag as (
 
-    select *,array(
+    select src,array(
       select pid, (path).LEFT(LENGTH(path) - (uid_len-1)).split('&'||uid) path
       from unnest(paths) path with offset pid 
       --|> cross join unnest(path) p with offset depth
@@ -57,8 +78,8 @@ create temp function parsed(object any type,maxDepth int) as ((
       |> set path = array(
           select depth,(p).split('?'||uid) dat from unnest(path) p with offset depth
           |> extend dat[safe_offset(0)].ltrim('."').ltrim('".') as key,dat[safe_offset(1)].ltrim('&').split('&') as meta
-          |> select as struct pid,depth,key,cast(meta[0].split('=')[1] as int) as idx,cast(meta[1].split('=')[1] as int) as open
-          |> order by pid,depth,idx,open
+          |> select as struct pid,depth,key,cast(meta[0].split('=')[1] as int) as idx,cast(meta[1].split('=')[1] as int) as open,cast(meta[2].split('=')[1] as int) as close
+          |> order by pid,depth,idx,open,close
         )
       |> select as struct *
     ) fragment
@@ -66,7 +87,7 @@ create temp function parsed(object any type,maxDepth int) as ((
 
   )
 
-  select as struct src,fragment from frag
+  select as struct (src).anumKeys(uid) from init
 ));
 
 
