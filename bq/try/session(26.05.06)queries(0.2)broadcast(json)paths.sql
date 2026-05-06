@@ -100,10 +100,26 @@ CREATE or replace FUNCTION tmp.layJsonSafeGuards1(str STRING) AS (
 CREATE or replace FUNCTION tmp.getJsonPathsData1(str string,maxDepth int) AS ((
   with init as (
     select (str).parse_json() parsed
-  )
-  select as struct parsed,(parsed).json_keys(maxDepth,mode=>"lax recursive") paths 
-  from init
+  ),
+
+  path as (
+    select parsed,(parsed).json_keys(maxDepth,mode=>"lax recursive") paths 
+    from init
   
+  ),
+
+  flat as (
+
+    select parsed,array(
+      select as struct *,count(*) over() len from (
+        select distinct (p).regexp_replace(r'\?sid=v.*?\&sid=v...','') from unnest(paths) p
+      )
+    ) paths from path
+
+  )
+
+  select as struct * from path
+ 
 ));
 
 CREATE or replace AGGREGATE FUNCTION tmp.getJsonPathSchema1(src string,uid string,maxDepth int) AS (
@@ -127,17 +143,20 @@ create or replace table function tmp.getJsonPaths1(input table<src string>,maxDe
 
   with exit as (
     select * from tmp.getJsonPathsThru1(table input, 
-      constants => (from input |> limit 1
+      constants => (from input |> limit 128
 
-        |> extend farm_fingerprint(src) as sig
-        -- |> where sig >> 62 = 1
-   
+        --|> extend farm_fingerprint(src) as sig
+        --|> where sig >> 62 = 1
+        --|> limit 32
+
         -- -- sampling strategy A:
         -- |> order by length(src) desc
         -- |> limit 1
   
-        -- sampling strategy B:
-        -- |> aggregate max_by(src,length(src)) src
+        -- sampling strategy B (won't always get the highest entropy schema -> you need to split by structural commas instead):
+        
+        |> aggregate max_by(src,length(src)) src
+        |> extend farm_fingerprint(src) as sig
         
         -- pass result to schema extrctor
         |> extend ('sid=v'||cast(sig as string).left(3)) as uid
