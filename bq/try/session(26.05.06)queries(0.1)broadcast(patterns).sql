@@ -10,31 +10,47 @@ CREATE or replace AGGREGATE FUNCTION tmp.multiAggregate1(
   divisor FLOAT64)
 AS (struct(
   AVG(v / divisor) as sv,
-  max(v) as mv
+  max(v) as mv --,any_value(rand()) as rv
 ));
-
--- unused
 
 create or replace table function tmp.aggregator1(input table<v int>, divisor int) as (
 
-  --select AVG(v / divisor) sv from input
-  --any_value((select tmp.ScaledAverage(v,divisor) sv from input)) sv from unnest([0])
-  --select tmp.ScaledAverage(v,divisor) as sv,max(v) as mv from input
+  -- Granular:
+  -- select tmp.ScaledAverage(v,divisor) as sv,max(v) as mv from input
+  
+  -- Colocated:
   select tmp.multiAggregate1(v,divisor) as constants from input
+
 );
 
 create or replace table function tmp.inner1(input table<v int>,constants any type) as (
 
+  -- Pattern to emulate:
+  -- select (v - avg(v/2) over())/max(v) over() v
+  -- from input
+
+  -- Single scan patterns:
   
+  -- Pattern A:
+  -- select (v-c.sv)/c.mv v from input 
+  -- cross join unnest([constants]) c
+
+  -- Pattern B:
   select (v-c.sv)/c.mv v from input 
-  cross join ((select any_value(constants) c from (select null))) --> trade shuffle for compute
+  cross join (select null |> aggregate any_value(constants) c) --> trade shuffle for compute
   -- left join ((select any_value(constants) c from (select null))) on true --> trade compute for shuffle
 
-  --select (v-c.sv)/c.mv v from input 
-  --cross join (select any_value(c).* from unnest(constants) c) c  
+  -- Pattern C:
+  -- select (select (v-c.sv)/c.mv from (select any_value(constants) over() c from (select null))) v
+  -- from input
+  
+  -- Double scan patterns:
+  
+  -- Pattern C:
+  -- select ((v - constants.sv)/constants.mv) v 
+  -- from input --> reads twice but keeps local compute
 
-  -- select (v - constants.sv)/constants.mv v from input 
-
+  -- Pattern D:
   -- select (v -  any_value(constants.sv))/any_value(constants.mv) nv
   -- from input group by v
 
@@ -44,7 +60,8 @@ create or replace table function tmp.thru1(input table<v int>,constants any type
 
   with init as (
     select v
-    from input
+    from input 
+   
   )
 
   from init |> call tmp.inner1(constants)
@@ -55,11 +72,9 @@ create or replace table function tmp.processor1(input table<v int>,divisor int) 
 
   with exit as (
     select * from tmp.thru1(table input, 
-      constants => -- (from input |> call tmp.aggregator1(2) |> select *) 
-      -- (from input |> call tmp.aggregator1(divisor) |> select as struct *)
-      (from input |> aggregate tmp.multiAggregate1(v,divisor))
-      --(select tmp.multiAggregate1(v,divisor) from input)
-      --(select * from tmp.aggregator1(table input,divisor))
+      constants => 
+      (from input |> aggregate tmp.multiAggregate1(v,divisor)) -- UDAF aggregator
+      -- (from input |> call tmp.aggregator1(divisor) -- TVF aggregator
     )
   )
 
@@ -72,4 +87,3 @@ create temp table init cluster by v as (
 );
 
 select * from tmp.processor1(table init,2)
-
