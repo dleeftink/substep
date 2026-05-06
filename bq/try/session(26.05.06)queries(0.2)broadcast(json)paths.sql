@@ -3,23 +3,57 @@ create or replace function tmp.jsonTuples1(jsn STRING) as (
      .replace('"":','"undefined":')
 );
 
+CREATE OR REPLACE FUNCTION tmp.mapJsonSafeGuards1(jsn STRING, esc BOOL) AS ((
+
+  -- 1. Replace escaped quotes with a unique marker (\x05) so they don't break the SPLIT
+  -- 2. Split on the structural double quote (")
+  -- 3. Content between quotes will always be at ODD offsets (1, 3, 5...)
+  
+  WITH chunks AS (
+    SELECT 
+      part, 
+      off,
+      MOD(off, 2) = 1 AS is_content
+    FROM UNNEST(
+      SPLIT(REPLACE(jsn, '\\"', '\x05'), '"')
+    ) AS part WITH OFFSET off
+  )
+  
+  -- 4. Re-assemble. If it's content, wrap it back in quotes and apply safeguards
+  select array_to_string(
+    array(SELECT 
+      IF(is_content, 
+        CONCAT('"', fix.jsonSafeGuards(part, esc), '"'), 
+      part),  
+    FROM chunks)  
+  ,'')
+
+)) OPTIONS (
+  description = "Sanitizes quoted JSON fields by escaping reserved delimiters."
+);
+
+-- enumerate keys so repeated/unnamed keys will also be extracted
 create or replace function tmp.enumKeys1(jsn STRING, uid STRING) AS ((
   select array_to_string(
     array(
 
-      -- maybe encode query string as json INSIDE the key..
+      -- investigate: encode query string as JSON INSIDE the key..
       select if(right(part,1)= ':', (part).rtrim('":')
       || '?' || uid || '&idx=' || i 
       || '&' || uid || '":',(part)) part
-      FROM UNNEST(SPLIT((jsn).replace('":','":>>').replace(',',',>>'), '>>')) AS part WITH OFFSET i
+      FROM UNNEST(SPLIT((jsn).replace('":','":>>')/*.replace(',',',>>')*/, '>>')) AS part WITH OFFSET i
       
     ),''
   )
 )); 
 
+-- convert any SQL object to escaped json string, fix json tuples for some SQL > JSON conversion
+
 create or replace function tmp.jsonStringMask1(object ANY TYPE) as (
-  (object).(get.jsonStringFromStruct)().(map.jsonSafeGuards)(true).(tmp.jsonTuples1)() -- .(enumKeys)().(layJsonSafeGuards)()
+  (object).(to_json_string)().(tmp.mapJsonSafeGuards1)(true).(tmp.jsonTuples1)()
 );
+
+-- drop safeguards before calling parse_json()
 
 CREATE or replace FUNCTION tmp.layJsonSafeGuards1(str STRING) AS (
   TRANSLATE(str, 
@@ -30,45 +64,46 @@ CREATE or replace FUNCTION tmp.layJsonSafeGuards1(str STRING) AS (
 
 CREATE or replace FUNCTION tmp.getJsonPathsData1(str string,maxDepth int) AS ((
   with init as (
-    select (str).parse_json() schema
+    select (str).parse_json() parsed
   )
-  select as struct schema,(schema).json_keys(maxDepth,mode=>"lax recursive") paths 
+  select as struct parsed,(parsed).json_keys(maxDepth,mode=>"lax recursive") paths 
   from init
   
 ));
 
 CREATE or replace AGGREGATE FUNCTION tmp.getJsonPathSchema1(src string,uid string,maxDepth int) AS (
-  any_value(src).(tmp.enumKeys1)(any_value(uid)).(tmp.layJsonSafeGuards1)().(tmp.getJsonPathsData1)(any_value(maxDepth)) --as jsn
+  any_value(src).(tmp.enumKeys1)(any_value(('sid=v'||generate_uuid().left(3)))).(tmp.layJsonSafeGuards1)().(tmp.getJsonPathsData1)(any_value(maxDepth)) --as jsn
 );
 
 create or replace table function tmp.getJsonPathsThru1(input table<src string>,constants any type) as (
 
-  select src,array_length(jsn.paths) jsn from input 
+  select src,jsn from input 
   cross join (select null |> aggregate any_value(constants) as jsn) 
 
 );
 
-create or replace table function tmp.getJsonPaths1(input table<src string/*,msk string*/>,uid string,maxDepth int) as (
+create or replace table function tmp.getJsonPaths1(input table<src string/*,msk string*/>,maxDepth int) as (
 
   with exit as (
     select * from tmp.getJsonPathsThru1(table input, 
-      constants => 
-      (from input |> aggregate tmp.getJsonPathSchema1(/*msk*/ src,uid,maxDepth) ) -- UDAF aggregator
+      constants => (from input |> limit 1
+        |> aggregate tmp.getJsonPathSchema1(src, null,maxDepth) -- UDAF aggregator
+      ) 
     )
   )
 
-  select * from exit
+  select src,jsn from exit
 
 );
 
 with real as (
   select (blob).(tmp.jsonStringMask1)() as src/*,any_value(blob) over().(tmp.jsonStringMask1)() as msk*/ from (
     select
-      hits[safe_offset(0)] as blob
+      hits as blob
     from (
-      select * from `stack-curves.tables.hits` limit 32
-    ) get--, get.hits
+      select * from `stack-curves.tables.hits` -- limit 256
+    ) get, get.hits
   )
 )
 
-select * from tmp.getJsonPaths1(table real,('sid=v'||generate_uuid().left(3)),9) -- second argument = unused uid/ns mechanism
+select jsn.paths[safe_offset(0)] len from tmp.getJsonPaths1(table real,8) -- second argument = unused uid/ns mechanism 
