@@ -47,10 +47,45 @@ create or replace function tmp.enumKeys1(jsn STRING, uid STRING) AS ((
   )
 )); 
 
+create or replace function tmp.getJsonStringFromStruct(object ANY TYPE) as ((
+
+  with list as (
+  
+    select (sql).split(',') sql,(jsn).split(',') jsn from (
+      select format("%T",object) sql,(object).to_json_string() jsn 
+    ) -- coalesce(safe_divide(((jsn).split('},"":').array_length()-1),((jsn).split('","":').array_length()-1)),0), -- optional initial well-formedness check
+  
+  ),
+
+  fuse as (
+
+    -- resolve JSON floating conversion from source SQL string
+    -- assumes balanced commas
+    
+    select if(array_length(sql) = array_length(jsn),
+
+      array_to_string(array(
+        select IF((jsonpart).translate('0123456789','0').contains_substr("0"),
+          (jsonpart).REGEXP_REPLACE(r'^([^0-9]*)[0-9\.\s-]+([\]\}]*)$',
+             (r'\1').CONCAT((sql[idx]).ltrim().REGEXP_REPLACE(r'[^0-9\.\s-]', ''), r'\2')
+        ),jsonpart) as res from unnest(jsn) jsonpart with offset idx
+        order by idx
+      ),',')
+
+    , error("Imbalanced SQL / JSON part arrays")) jsn from list
+  
+  )
+
+  select jsn from fuse
+
+)) OPTIONS (
+  description = "Serializes a SQL struct to JSON while preserving literal source values."
+);
+
 -- convert any SQL object to escaped json string, fix json tuples for some SQL > JSON conversion
 
 create or replace function tmp.jsonStringMask1(object ANY TYPE) as (
-  (object).(to_json_string)().(tmp.mapJsonSafeGuards1)(true).(tmp.jsonTuples1)()
+  (object).(tmp.getJsonStringFromStruct)().(tmp.mapJsonSafeGuards1)(true).(tmp.jsonTuples1)()
 );
 
 -- drop safeguards before calling parse_json()
@@ -72,7 +107,11 @@ CREATE or replace FUNCTION tmp.getJsonPathsData1(str string,maxDepth int) AS ((
 ));
 
 CREATE or replace AGGREGATE FUNCTION tmp.getJsonPathSchema1(src string,uid string,maxDepth int) AS (
-  any_value(src).(tmp.enumKeys1)(any_value(('sid=v'||generate_uuid().left(3)))).(tmp.layJsonSafeGuards1)().(tmp.getJsonPathsData1)(any_value(maxDepth)) --as jsn
+  any_value(src).(tmp.enumKeys1)(any_value(uid)).(tmp.layJsonSafeGuards1)().(tmp.getJsonPathsData1)(any_value(maxDepth)) --as jsn
+);
+
+CREATE or replace FUNCTION tmp.getJsonPathSchema2(src string,uid string,maxDepth int) AS (
+  (src).(tmp.enumKeys1)(uid).(tmp.layJsonSafeGuards1)().(tmp.getJsonPathsData1)(maxDepth)
 );
 
 create or replace table function tmp.getJsonPathsThru1(input table<src string>,constants any type) as (
@@ -80,19 +119,36 @@ create or replace table function tmp.getJsonPathsThru1(input table<src string>,c
   select src,jsn from input 
   cross join (select null |> aggregate any_value(constants) as jsn) 
 
+  -- select src,constants jsn from input 
+
 );
 
-create or replace table function tmp.getJsonPaths1(input table<src string/*,msk string*/>,maxDepth int) as (
+create or replace table function tmp.getJsonPaths1(input table<src string>,maxDepth int) as (
 
   with exit as (
     select * from tmp.getJsonPathsThru1(table input, 
       constants => (from input |> limit 1
-        |> aggregate tmp.getJsonPathSchema1(src, null,maxDepth) -- UDAF aggregator
+
+        |> extend farm_fingerprint(src) as sig
+        -- |> where sig >> 62 = 1
+   
+        -- -- sampling strategy A:
+        -- |> order by length(src) desc
+        -- |> limit 1
+  
+        -- sampling strategy B:
+        -- |> aggregate max_by(src,length(src)) src
+        
+        -- pass result to schema extrctor
+        |> extend ('sid=v'||cast(sig as string).left(3)) as uid
+        |> select tmp.getJsonPathSchema2(src,uid,maxDepth)
+        
+        -- |> aggregate tmp.getJsonPathSchema1(src=>src, uid=>('sid=v'||generate_uuid().left(3)),maxDepth=>maxDepth) -- UDAF aggregator
       ) 
     )
   )
 
-  select src,jsn from exit
+  select * from exit
 
 );
 
@@ -106,4 +162,4 @@ with real as (
   )
 )
 
-select jsn.paths[safe_offset(0)] len from tmp.getJsonPaths1(table real,8) -- second argument = unused uid/ns mechanism 
+select array_length(jsn.paths) from tmp.getJsonPaths1(table real,8)
