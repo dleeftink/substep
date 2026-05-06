@@ -1,5 +1,5 @@
 create or replace function tmp.jsonTuples1(jsn STRING) as (
-  (jsn).regexp_replace(r'""\:"?([^\{\}\[\]]*?)"?\,""\:([^\{\}\[\]]*?)',r'"\1":\2')  -- move quoted keys/values into empty key position and mark insertion point
+  (jsn).regexp_replace(r'""\:"?([^\{\}\[\]]*?)"?\,""\:([^\{\}\[\]]*?)',r'"\1":\2')  -- move (un)quoted keys/values into empty key position and mark insertion point
      .replace('"":','"undefined":')
 );
 
