@@ -12,8 +12,9 @@ import heapq
 import sys
 from collections import defaultdict
 
+import re
+
 def extract_functions_and_deps(sql_content, valid_namespaces):
-    """Extract definitions and deps, handling BQ chaining logic."""
     # 1. Strip comments
     sql_content = re.sub(r'--.*', '', sql_content)
     sql_content = re.sub(r'/\*.*?\*/', '', sql_content, flags=re.DOTALL)
@@ -21,8 +22,7 @@ def extract_functions_and_deps(sql_content, valid_namespaces):
     # 2. Extract function definition
     def_pattern = r'create\s+(?:or\s+replace\s+)?(?:table\s+)?function\s+([`\w\.]+)'
     def_match = re.search(def_pattern, sql_content, re.IGNORECASE)
-    if not def_match:
-        return None, None, set()
+    if not def_match: return None, None, set()
 
     current_func_original = def_match.group(1).replace('`', '')
     current_func_lower = current_func_original.lower()
@@ -33,29 +33,28 @@ def extract_functions_and_deps(sql_content, valid_namespaces):
 
     ns_regex = '|'.join(map(re.escape, valid_namespaces))
     
-    # Identify chains: matches .(ns.func)()
-    chain_pattern = r'\.\(\s*((' + ns_regex + r')\.[\w\-]+)\s*\)\(\)'
+    # Updated chain_pattern: 
+    # Matches .(ns.func)(args) where args can be empty or contain text/nested parens
+    chain_pattern = r'\.\(\s*((' + ns_regex + r')\.[\w\-]+)\s*\)\(([^)]*)\)'
+    
+    # Extract just the function names from the chains
     chains = [m[0].lower() for m in re.findall(chain_pattern, sql_content, re.IGNORECASE)]
     
-    deps_lower = set()
+    deps_metadata = set()
     
-    # Link the chain: Right depends on Left
     if chains:
         for i in range(len(chains) - 1):
-            # Format: INTERNAL_DEP:right->left
-            deps_lower.add(f"INTERNAL_DEP:{chains[i+1]}->{chains[i]}")
-        # The parent function depends on the result of the final call in the chain
-        deps_lower.add(chains[-1])
+            deps_metadata.add(f"INTERNAL_DEP:{chains[i+1]}->{chains[i]}(chained)")
+        deps_metadata.add(f"DEP:{chains[-1]}(chained)")
 
-    # Find all standard calls (ns.func)
+    # Find standard calls (avoiding things already caught in chains)
     all_calls_pattern = r'\b(' + ns_regex + r')\.([\w\-]+)(?!\w)'
     for match in re.finditer(all_calls_pattern, sql_content, re.IGNORECASE):
         dep = f"{match.group(1)}.{match.group(2)}".lower()
-        # Only add if it's not the current function and NOT already handled as part of a chain
         if dep != current_func_lower and dep not in chains:
-            deps_lower.add(dep)
+            deps_metadata.add(f"DEP:{dep}")
             
-    return current_func_lower, current_func_original, deps_lower
+    return current_func_lower, current_func_original, deps_metadata
 
 def main(excluded_namespaces):
     bq_dir = "bq"
@@ -74,33 +73,39 @@ def main(excluded_namespaces):
     func_to_path = {}
     func_to_original = {}
 
+    func_to_deps = defaultdict(set)           # Logic graph (clean names)
+    func_to_display_deps = defaultdict(set)   # For YAML output (with tags)
+
     # Build the graph
     for root, dirs, files in os.walk(bq_dir):
         dirs[:] = [d for d in dirs if d.lower() not in excluded_namespaces]
-        
         for file in files:
             if file.endswith('.sql'):
                 path = os.path.join(root, file)
                 with open(path, 'r', encoding='utf-8') as f:
                     content = f.read()
                 
-                func_lower, func_original, deps_lower = extract_functions_and_deps(content, namespaces)
+                func_lower, func_original, deps_metadata = extract_functions_and_deps(content, namespaces)
                 if func_lower:
                     all_defined_funcs.add(func_lower)
                     func_to_path[func_lower] = path
                     func_to_original[func_lower] = func_original
                     
-                    if func_lower not in func_to_deps:
-                        func_to_deps[func_lower] = set()
-
-                    for dep in deps_lower:
-                        if dep.startswith("INTERNAL_DEP:"):
-                            child, parent = dep.replace("INTERNAL_DEP:", "").split("->")
-                            if child not in func_to_deps:
-                                func_to_deps[child] = set()
-                            func_to_deps[child].add(parent)
+                    for item in deps_metadata:
+                        if item.startswith("INTERNAL_DEP:"):
+                            # Format: INTERNAL_DEP:child->parent(chained)
+                            link = item.replace("INTERNAL_DEP:", "")
+                            child_raw, parent_raw = link.split("->")
+                            
+                            child_clean = child_raw.split("(")[0]
+                            func_to_deps[child_clean].add(parent_raw.split("(")[0])
+                            func_to_display_deps[child_clean].add(parent_raw)
                         else:
-                            func_to_deps[func_lower].add(dep)
+                            # Format: DEP:name or DEP:name(chained)
+                            dep_raw = item.replace("DEP:", "")
+                            dep_clean = dep_raw.split("(")[0]
+                            func_to_deps[func_lower].add(dep_clean)
+                            func_to_display_deps[func_lower].add(dep_raw)
 
     # After building func_to_deps, update the global graph
     for caller, deps in func_to_deps.items():
@@ -152,7 +157,11 @@ def main(excluded_namespaces):
     yaml_output = {
         "install_order": [func_to_original[f] for f in install_order],
         "dependencies": {
-            func_to_original[f]: [func_to_original[d] for d in sorted(func_to_deps[f]) if d in all_defined_funcs]
+            func_to_original[f]: sorted([
+                # Use display name if defined, otherwise original name
+                func_to_original.get(d.split("(")[0], d.split("(")[0]) + ("(chained)" if "(chained)" in d else "")
+                for d in func_to_display_deps[f] if d.split("(")[0] in all_defined_funcs
+            ])
             for f in install_order
         },
         "path_map": {func_to_original[f]: func_to_path[f] for f in install_order}
