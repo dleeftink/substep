@@ -1,19 +1,3 @@
-create or replace function tmp.getJsonValuesAt(object json,keys array<string>) as (
-  array(select as struct key,object[key] val from unnest(keys) key |> where val is not null)
-);
-
-create or replace function tmp.getJsonTopLevelValues(object json, keys array<string>) as ((
-  with init as (
-    select json_type(object) type
-  )
-  select as struct case 
-    when type = 'array' then 
-    array(select as struct '['||i||']' as ord,tmp.getJsonValuesAt(obj,keys) obj from unnest(json_query_array(object,'$')) obj with offset i)
-    when type = 'object' then
-    array(select as struct '$' as ord,tmp.getJsonValuesAt(object,keys) obj)
-  end as vals,type from init
-));
-
 CREATE or replace function tmp.getJsonPathIndex1(src string) as ((
   (split((src).replace('":','":>>').replace(',',',>>').regexp_replace(r'([\[\]\{\}]+)',r'\1>>'), '>>'))  
 ));
@@ -32,6 +16,28 @@ create or replace function tmp.enumKeys2(str STRING, uid any type) AS ((
   ))
 )); 
 
+create or replace function tmp.getJsonValuesAt(object json,keys array<string>) as ((
+  select as struct array_agg(obj) dat, struct(bit_xor(farm_fingerprint(key)) as key,bit_xor(farm_fingerprint(val)) as val) as sigs from (
+    select key,(jsn).to_json_string() val from (
+      select key,object[key] jsn from unnest(keys) key
+    )
+  ) obj where val is not null
+  -- select as struct array_concat_agg(  get.unrolled((object[key]).to_json_string(),[('[',']'),('{','}')],10)) obj from unnest(keys) key
+
+));
+
+create or replace function tmp.getJsonTopLevelValues(object json, keys array<string>) as ((
+  with init as (
+    select json_type(object) type
+  )
+  select as struct case 
+    when type = 'array' then 
+    array(select as struct '['||i||']' as loc,tmp.getJsonValuesAt(obj,keys).* from unnest(json_query_array(object,'$')) obj with offset i)
+    when type = 'object' then
+    array(select as struct '$' as loc,tmp.getJsonValuesAt(object,keys).*)
+  end as obj,type from init
+));
+
 create or replace function tmp.getJsonSignature2(object any type,uid any type) as ((
   with init as (
     select 
@@ -47,11 +53,8 @@ create or replace function tmp.getJsonSignature2(object any type,uid any type) a
   ),
   tops as (
     select *,(jsn).(tmp.getJsonTopLevelValues)(key).* from prop
-  ),
-  sigs as (
-    select *,farm_fingerprint(str) sig from tops
   )
-  select as struct * from sigs
+  select as struct ns,str,obj from tops
 ));
 
 CREATE or replace AGGREGATE FUNCTION tmp.useJsonSchemaSamplerUDAF1(
@@ -105,7 +108,7 @@ create or replace table function tmp.getJsonPaths2(input table<src struct<ns str
 );
 
 with real as (
-  select (blob).(tmp.getJsonSignature2)() as src from (
+  select (blob).(tmp.getJsonSignature2)(null) as src from (
     select
       hits as blob
     from (
