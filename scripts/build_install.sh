@@ -48,6 +48,8 @@ except Exception as e:
 
 append_clean_sql() {
     local file_path=$1
+    local KEEP_SEQ="'" # Change this to any sequence you want to preserve
+    
     echo -e "\n-- Source: $file_path" >> "$OUTPUT_FILE"
     
     if [ "$MINIFY" = true ]; then
@@ -59,13 +61,13 @@ append_clean_sql() {
             s/;\s*$//;
         ' "$file_path" >> "$OUTPUT_FILE"
     else
-        perl -0777 -pe '
-            s/\/\*.*?\*\///gs;         # 1. Remove block comments
-            s/--.*//g;                 # 2. Remove line comments
-            s/^\s+//;                  # 3. Trim leading whitespace/newlines
-            s/[[:space:];]*$//;        # 4. Trim trailing whitespace/semicolons
-            s/\n\s*\n+/\n\n/g;         # 5. Squeeze internal newlines
-        ' "$file_path" >> "$OUTPUT_FILE"
+        perl -0777 -pe "
+            s/\/\*.*?\*\///gs;              # Remove block comments
+            s/--(?! $KEEP_SEQ).*//g;        # Remove line comments UNLESS they start with -- $KEEP_SEQ
+            s/^\s+//;                       # Trim leading whitespace
+            s/[[:space:];]*$//;             # Trim trailing whitespace/semicolons
+            s/\n\s*\n+/\n\n/g;              # Squeeze internal newlines
+        " "$file_path" >> "$OUTPUT_FILE"
     fi
     echo -e ";" >> "$OUTPUT_FILE"
 }
