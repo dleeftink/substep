@@ -1,4 +1,4 @@
-CREATE OR REPLACE FUNCTION map.jsonSafeGuards(jsn STRING, esc BOOL) AS ((
+CREATE OR REPLACE FUNCTION map.jsonSafeGuards(jsn STRING) AS ((
 
   -- 1. Replace escaped quotes with a unique marker (\x05) so they don't break the SPLIT
   -- 2. Split on the structural double quote (")
@@ -18,7 +18,7 @@ CREATE OR REPLACE FUNCTION map.jsonSafeGuards(jsn STRING, esc BOOL) AS ((
   select array_to_string(
     array(SELECT 
       IF(is_content, 
-        CONCAT('"', fix.jsonSafeGuards(part, esc), '"'), 
+        CONCAT('"', fix.jsonSafeGuards(part), '"'), 
       part),  
     FROM chunks)  
   ,'')
