@@ -1,16 +1,40 @@
 /*
   BigQuery Dependency Tree
-  Generated: Thu May  7 03:24:40 AM UTC 2026
+  Generated: Thu May  7 04:24:47 AM UTC 2026
   -------------------------------------------
-  Project Dependency Tree
-  ───────────────────────
+  Namespace Hierarchy
+  ───────────────────
   ├─ cue.meta
+  │   └─ cue.jsonObjectInterface
   ├─ def.meta
   ├─ fix.meta
+  │   ├─ fix.jsonKeyFragment
+  │   ├─ fix.jsonPrimitives
+  │   ├─ fix.jsonSafeGuards
+  │   └─ fix.jsonTuples
   ├─ get.meta
+  │   ├─ get.characterIndices
+  │   ├─ get.jsonKeyFragment
+  │   ├─ get.jsonKeyIndex
+  │   ├─ get.jsonObjectBoundaries
+  │   ├─ get.jsonObjectFragment
+  │   ├─ get.jsonObjectMetadata
+  │   ├─ get.jsonStringFromStruct
+  │   ├─ get.jsonStringMask
+  │   └─ get.unrolled
   ├─ lay.meta
+  │   ├─ lay.jsonPrimitives
+  │   └─ lay.jsonSafeGuards
   ├─ map.meta
-  ├─ use.meta
+  │   ├─ map.jsonSafeGuards
+  │   └─ map.objectContainment
+  └─ use.meta
+      ├─ use.parser
+      └─ use.unroller
+  
+  
+  CALL GRAPH: use.parser
+  ──────────────────────
   └─ use.parser
       ├─ get.jsonStringMask
       │   ├─ fix.jsonTuples
@@ -38,7 +62,7 @@
 -- Source: bq/cue/_meta.sql
 CREATE OR REPLACE FUNCTION cue.meta() AS (STRUCT(
   "Validation: Type checkers and initialisers for the 'subtype' namespace." AS scope,
-  "0.1.2" AS version,
+  "0.1.3" AS version,
   "https://github.com/dleeftink/substep" AS repo
 )) OPTIONS (
   description = "Type checkers and initialisers for the 'subtype' namespace."
@@ -47,7 +71,7 @@ CREATE OR REPLACE FUNCTION cue.meta() AS (STRUCT(
 -- Source: bq/def/_meta.sql
 CREATE OR REPLACE FUNCTION def.meta() AS (STRUCT(
   "Contracts: Schema defaults and API definitions for the 'substep' namespace." AS scope,
-  "0.1.2" AS version,
+  "0.1.3" AS version,
   "https://github.com/dleeftink/substep" AS repo
 )) OPTIONS (
   description = "Schema defaults and API definitions for the 'substep' namespace."
@@ -56,7 +80,7 @@ CREATE OR REPLACE FUNCTION def.meta() AS (STRUCT(
 -- Source: bq/fix/_meta.sql
 CREATE OR REPLACE FUNCTION fix.meta() AS (STRUCT(
   "Fixers: Patchers an correctors for the 'substep' namespace." AS scope,
-  "0.1.2" AS version,
+  "0.1.3" AS version,
   "https://github.com/dleeftink/substep" AS repo
 )) OPTIONS (
   description = "Patchers an correctors for the 'substep' namespace."
@@ -65,7 +89,7 @@ CREATE OR REPLACE FUNCTION fix.meta() AS (STRUCT(
 -- Source: bq/get/_meta.sql
 CREATE OR REPLACE FUNCTION get.meta() AS (STRUCT(
   "Extraction: Parsers and extractors for the 'substep' namespace." AS scope,
-  "0.1.2" AS version,
+  "0.1.3" AS version,
   "https://github.com/dleeftink/substep" AS repo
 )) OPTIONS (
   description = "Parsers and extractors for the 'substep' namespace."
@@ -74,7 +98,7 @@ CREATE OR REPLACE FUNCTION get.meta() AS (STRUCT(
 -- Source: bq/lay/_meta.sql
 CREATE OR REPLACE FUNCTION lay.meta() AS (STRUCT(
   "Layers: Formatters and layouters for the 'substep' namespace." AS scope,
-  "0.1.2" AS version,
+  "0.1.3" AS version,
   "https://github.com/dleeftink/substep" AS repo
 )) OPTIONS (
   description = "Formatters and layouters for the 'substep' namespace."
@@ -83,7 +107,7 @@ CREATE OR REPLACE FUNCTION lay.meta() AS (STRUCT(
 -- Source: bq/map/_meta.sql
 CREATE OR REPLACE FUNCTION map.meta() AS (STRUCT(
   "Mapping: Lambdas and transformers for the 'substep' namespace." AS scope,
-  "0.1.2" AS version,
+  "0.1.3" AS version,
   "https://github.com/dleeftink/substep" AS repo
 )) OPTIONS (
   description = "Lambdas and transformers for the 'substep' namespace."
@@ -92,7 +116,7 @@ CREATE OR REPLACE FUNCTION map.meta() AS (STRUCT(
 -- Source: bq/use/_meta.sql
 CREATE OR REPLACE FUNCTION use.meta() AS (STRUCT(
   "Tooling: Core functions for the 'substep' namespace." AS scope,
-  "0.1.2" AS version,
+  "0.1.3" AS version,
   "https://github.com/dleeftink/substep" AS repo
 )) OPTIONS (
   description = "Core functions for the 'substep' namespace."
@@ -116,8 +140,8 @@ CREATE OR REPLACE FUNCTION fix.jsonPrimitives(jsn STRING) AS (
 
 -- Source: bq/fix/jsonSafeGuards.sql
 CREATE OR REPLACE FUNCTION fix.jsonSafeGuards(str STRING) AS (
-  TRANSLATE(str,
-    '{}[]:,<>()#',
+  TRANSLATE(str, 
+    '{}[]:,<>()#', 
     CODE_POINTS_TO_STRING([0x1C, 0x1D, 0x02, 0x03, 0x1E, 0x1F, 0x01, 0x04, 0x11, 0x13, 0x1B])
   )
 ) OPTIONS (
@@ -127,17 +151,13 @@ CREATE OR REPLACE FUNCTION fix.jsonSafeGuards(str STRING) AS (
 -- Source: bq/fix/jsonTuples.sql
 create or replace function fix.jsonTuples(jsn STRING) as (
   (jsn)
-    .regexp_replace(r'""\:"?([^\{\}\[\]]*?)"?\,""\:([^\{\}\[\]]*?)',r'"\1":\2')
+    .regexp_replace(r'""\:"?([^\{\}\[\]]*?)"?\,""\:([^\{\}\[\]]*?)',r'"\1":\2')  
     .replace('"":','"undefined":')
 ) OPTIONS (
   description = "Resolves empty:non-empty key/value sequences resulting from SQL-to-JSON conversion."
 );
 
 -- Source: bq/get/characterIndices.sql
-
-
-
-
 create or replace table function get.characterIndices(str STRING, rgx STRING) as ((
   select regexp_instr(str, rgx, 1, off + 1) AS idx, sub
   from unnest(regexp_extract_all(str, rgx)) AS sub WITH OFFSET AS off
@@ -145,7 +165,7 @@ create or replace table function get.characterIndices(str STRING, rgx STRING) as
 
 -- Source: bq/get/jsonKeyFragment.sql
 create or replace function get.jsonKeyFragment(jsn STRING,open INT, keypos INT) as (
-  (jsn).substring(keypos+1,greatest(0,open-keypos-0)).ltrim(' ')
+  (jsn).substring(keypos+1,greatest(0,open-keypos-0)).ltrim(' ') 
 ) OPTIONS (
   description = "Extracts a JSON key segment based on open and closing positions."
 );
@@ -167,15 +187,12 @@ create or replace function get.jsonStringFromStruct(object ANY TYPE) as ((
   with list as (
 
     select (sql).split(',') sql,(jsn).split(',') jsn from (
-      select format("%T",object) sql,(object).to_json_string() jsn
-    )
+      select format("%T",object) sql,(object).to_json_string() jsn 
+    ) 
 
   ),
 
   fuse as (
-
-
-
 
     select sql,if(array_length(sql) = array_length(jsn),
 
@@ -215,8 +232,8 @@ create or replace function get.jsonObjectFragment(jsn STRING, open INT, close IN
 create or replace function cue.jsonObjectInterface(a INT, b INT, jsn STRING, head ANY TYPE, tail ANY TYPE, slot INT, kpos INT) as (
   struct(
     head.raise,b as depth,slot,a as pre,head.idx as open,tail.idx as close,kpos,head.nest,
-    get.jsonKeyFragment(jsn,head.idx,kpos) as key,null as arr_sym,null as arr_ctx,null as ord,null as sym,
-    get.jsonObjectFragment(jsn,head.idx,tail.idx) as json, null as acid,null as ocid,null as ecid,false as list
+    get.jsonKeyFragment(jsn,head.idx,kpos) as key,null as arr_sym,null as arr_ctx,null as ord,null as sym, 
+    get.jsonObjectFragment(jsn,head.idx,tail.idx) as json, null as acid,null as ocid,null as ecid,false as list 
   )
 ) OPTIONS (
   description = "Defines the internal `get.jsonObjectMetadata()` interface."
@@ -237,7 +254,7 @@ create or replace function get.jsonObjectMetadata(a INT, b INT, pack ANY TYPE, j
   syms as (
 
     from init
-    |> set arr_sym = (key).regexp_extract(r'\:([\[\{]+)').ifnull(key), sym = right(key,1)
+    |> set arr_sym = (key).regexp_extract(r'\:([\[\{]+)').ifnull(key), sym = right(key,1) 
     |> set arr_ctx = if(left(arr_sym,1) = '[' and substring(arr_sym,2,1) in ('[','{'),1,0)
 
   ),
@@ -254,7 +271,7 @@ create or replace function get.jsonObjectMetadata(a INT, b INT, pack ANY TYPE, j
   locs as (
 
     from keys
-    |> set acid = sum(arr_ctx) over(partition by raise, nest order by slot),
+    |> set acid = sum(arr_ctx) over(partition by raise, nest order by slot),  
            ocid = row_number() over(partition by raise,depth,key order by open)-1
     |> set ecid = row_number() over(partition by raise,ocid order by open)-1
 
@@ -290,7 +307,7 @@ create or replace function get.jsonObjectMetadata(a INT, b INT, pack ANY TYPE, j
 );
 
 -- Source: bq/get/jsonObjectBoundaries.sql
-create or replace table function get.jsonObjectBoundaries(input table <idx INT, sub STRING, pre INT, depth INT, depths array<INT>, raise BOOL>, jsn STRING, pick INT) as (
+create or replace table function get.jsonObjectBoundaries(input table <idx INT, sub STRING, pre INT, depth INT, depths array<INT>, raise BOOL>, jsn STRING, pick INT) as ( 
 
    with init as (
     select * replace(
@@ -299,21 +316,21 @@ create or replace table function get.jsonObjectBoundaries(input table <idx INT, 
     ) from (
       select raise,pre a, depth b,
         array_agg(struct(pre > depth as pin,raise,idx,sub,depths[0] as nest) order by idx) subs,
-      from input
-      group by raise,a,b
-      having a < pick + 1
+      from input 
+      group by raise,a,b 
+      having a < pick + 1 
     )
   )
 
-  select get.jsonObjectMetadata(a,b,array_concat_agg(
-    array(select as struct slot,* except(slot) from unnest(subs) with offset as slot )
+  select get.jsonObjectMetadata(a,b,array_concat_agg(  
+    array(select as struct slot,* except(slot) from unnest(subs) with offset as slot )    
   ),jsn) as level from init group by a,b having a < pick + 0 order by a,b
 
 );
 
 -- Source: bq/lay/jsonSafeGuards.sql
 CREATE OR REPLACE FUNCTION lay.jsonSafeGuards(str STRING) AS (
-  TRANSLATE(str,
+  TRANSLATE(str, 
     CODE_POINTS_TO_STRING([0x1C, 0x1D, 0x02, 0x03, 0x1E, 0x1F, 0x01, 0x04, 0x11, 0x13, 0x1B,0x05]),
     '{}[]:,<>()#"'
 )) OPTIONS (
@@ -323,13 +340,9 @@ CREATE OR REPLACE FUNCTION lay.jsonSafeGuards(str STRING) AS (
 -- Source: bq/map/jsonSafeGuards.sql
 CREATE OR REPLACE FUNCTION map.jsonSafeGuards(jsn STRING) AS ((
 
-
-
-
-
   WITH chunks AS (
-    SELECT
-      part,
+    SELECT 
+      part, 
       off,
       MOD(off, 2) = 1 AS is_content
     FROM UNNEST(
@@ -337,13 +350,12 @@ CREATE OR REPLACE FUNCTION map.jsonSafeGuards(jsn STRING) AS ((
     ) AS part WITH OFFSET off
   )
 
-
   select array_to_string(
-    array(SELECT
-      IF(is_content,
-        CONCAT('"', fix.jsonSafeGuards(part), '"'),
-      part),
-    FROM chunks)
+    array(SELECT 
+      IF(is_content, 
+        CONCAT('"', fix.jsonSafeGuards(part), '"'), 
+      part),  
+    FROM chunks)  
   ,'')
 
 )) OPTIONS (
@@ -358,31 +370,25 @@ create or replace function get.jsonStringMask(object ANY TYPE) as (
 );
 
 -- Source: bq/map/objectContainment.sql
-
-
-
-
 create or replace table function map.objectContainment(input table<idx INT, sub STRING>, pairs array<struct<open STRING, close STRING>>) as (
 
   with locs as (
 
     select idx,sub,null as pre,sum(deep) - 1 depth, array_agg(deep) depths,array_agg(pair.open) openers from (
       select array(
-        select as struct idx,sub,off,pair, sum(case when sub = pair.open then 1 when sub = pair.close then -1 else 0 end) over(w1) as deep
+        select as struct idx,sub,off,pair, sum(case when sub = pair.open then 1 when sub = pair.close then -1 else 0 end) over(w1) as deep 
         from input window w1 as (order by idx rows between unbounded preceding and current row)
       ) dat from unnest(pairs) pair with offset as off
     ) get,get.dat group by idx,sub
 
   )
 
-  select * except(openers) replace(depth - (case when sub in unnest(openers) then 1 else -1 end) + raise as pre,depth+raise as depth, raise = 0  as raise)
+  select * except(openers) replace(depth - (case when sub in unnest(openers) then 1 else -1 end) + raise as pre,depth+raise as depth, raise = 0  as raise) 
   from locs,unnest(generate_array(0,1)) raise
 
 );
 
 -- Source: bq/use/unroller.sql
-
-
 create or replace function use.unroller(jsn STRING, pairs array<struct<open STRING, close STRING>>, pick INT) as ((
 
   with init as (
@@ -394,9 +400,9 @@ create or replace function use.unroller(jsn STRING, pairs array<struct<open STRI
 
   runs as (
 
-    select *,
-      sum(array_length(children)) over(order by depth rows between unbounded preceding and 1 preceding) run1,
-      sum(array_length(children)) over(order by depth rows between unbounded preceding and 2 preceding) run2
+    select *,        
+      sum(array_length(children)) over(order by depth rows between unbounded preceding and 1 preceding) run1, 
+      sum(array_length(children)) over(order by depth rows between unbounded preceding and 2 preceding) run2  
     from init where array_length(children) > 0
 
   ),
@@ -426,8 +432,6 @@ create or replace function use.unroller(jsn STRING, pairs array<struct<open STRI
 );
 
 -- Source: bq/get/unrolled.sql
-
-
 create or replace function get.unrolled(jsn STRING, pairs array<struct<open STRING, close STRING>>, upto INT) as (
   (jsn).(fix.jsonPrimitives)().(use.unroller)(pairs,upto)
 ) OPTIONS (
@@ -435,26 +439,20 @@ create or replace function get.unrolled(jsn STRING, pairs array<struct<open STRI
 );
 
 -- Source: bq/use/parser.sql
-
-
-
-
-
-
 create or replace function use.parser(object ANY TYPE, maxDepth INT) as ((
 
   with safe as (
-    select get.jsonStringMask(object) as jsn, [('[',']'),('{','}')] as pairs
+    select get.jsonStringMask(object) as jsn, [('[',']'),('{','}')] as pairs -- 'pairs is for tracking array and object contexts during parsing
   ),
 
   main as (
 
     select jsn as str,array(
       select as struct * replace(array(
-        select as struct * replace((json).(lay.jsonSafeGuards)().(safe.parse_json)() as json)
+        select as struct * replace((json).(lay.jsonSafeGuards)().(safe.parse_json)() as json) 
         from unnest(level.children)) as children
       ) from unnest(get.unrolled(jsn,pairs,maxDepth)) level
-    ) levels, (jsn).starts_with('[{') or (jsn).starts_with('[[') is_array_root
+    ) levels, (jsn).starts_with('[{') or (jsn).starts_with('[[') is_array_root 
     from safe
 
   )
