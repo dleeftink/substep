@@ -1,6 +1,6 @@
 /*
   BigQuery Dependency Tree
-  Generated: Thu May  7 04:24:47 AM UTC 2026
+  Generated: Thu May  7 06:04:12 AM UTC 2026
   -------------------------------------------
   Namespace Hierarchy
   ───────────────────
@@ -33,28 +33,28 @@
       └─ use.unroller
   
   
-  CALL GRAPH: use.parser
-  ──────────────────────
+  CALL GRAPH: use.parser()
+  ────────────────────────
   └─ use.parser
+      ├─ lay.jsonSafeGuards(chained)
       ├─ get.jsonStringMask
-      │   ├─ fix.jsonTuples
-      │   ├─ get.jsonStringFromStruct
-      │   └─ map.jsonSafeGuards
-      │       └─ fix.jsonSafeGuards
-      ├─ get.unrolled
-      │   ├─ fix.jsonPrimitives
-      │   └─ use.unroller
-      │       ├─ get.characterIndices
-      │       ├─ get.jsonObjectBoundaries
-      │       │   └─ get.jsonObjectMetadata
-      │       │       ├─ cue.jsonObjectInterface
-      │       │       │   ├─ get.jsonKeyFragment
-      │       │       │   └─ get.jsonObjectFragment
-      │       │       │       └─ lay.jsonPrimitives
-      │       │       ├─ fix.jsonKeyFragment
-      │       │       └─ get.jsonKeyIndex
-      │       └─ map.objectContainment
-      └─ lay.jsonSafeGuards
+      │   └─ fix.jsonTuples(chained)
+      │       └─ map.jsonSafeGuards(chained)
+      │           ├─ get.jsonStringFromStruct(chained)
+      │           └─ fix.jsonSafeGuards
+      └─ get.unrolled
+          └─ use.unroller(chained)
+              ├─ fix.jsonPrimitives(chained)
+              ├─ get.characterIndices
+              ├─ get.jsonObjectBoundaries
+              │   └─ get.jsonObjectMetadata
+              │       ├─ cue.jsonObjectInterface
+              │       │   ├─ get.jsonKeyFragment
+              │       │   └─ get.jsonObjectFragment
+              │       │       └─ lay.jsonPrimitives(chained)
+              │       ├─ fix.jsonKeyFragment
+              │       └─ get.jsonKeyIndex
+              └─ map.objectContainment
 */
 
 -- META FUNCTIONS
@@ -147,15 +147,6 @@ CREATE OR REPLACE FUNCTION fix.jsonSafeGuards(str STRING) AS (
 ) OPTIONS (
   description = "Escapes JSON delimiters using control characters or backslashes to prevent parsing collisions."
  );
-
--- Source: bq/fix/jsonTuples.sql
-create or replace function fix.jsonTuples(jsn STRING) as (
-  (jsn)
-    .regexp_replace(r'""\:"?([^\{\}\[\]]*?)"?\,""\:([^\{\}\[\]]*?)',r'"\1":\2')  
-    .replace('"":','"undefined":')
-) OPTIONS (
-  description = "Resolves empty:non-empty key/value sequences resulting from SQL-to-JSON conversion."
-);
 
 -- Source: bq/get/characterIndices.sql
 create or replace table function get.characterIndices(str STRING, rgx STRING) as ((
@@ -360,6 +351,15 @@ CREATE OR REPLACE FUNCTION map.jsonSafeGuards(jsn STRING) AS ((
 
 )) OPTIONS (
   description = "Sanitizes quoted JSON fields by escaping reserved delimiters."
+);
+
+-- Source: bq/fix/jsonTuples.sql
+create or replace function fix.jsonTuples(jsn STRING) as (
+  (jsn)
+    .regexp_replace(r'""\:"?([^\{\}\[\]]*?)"?\,""\:([^\{\}\[\]]*?)',r'"\1":\2')  
+    .replace('"":','"undefined":')
+) OPTIONS (
+  description = "Resolves empty:non-empty key/value sequences resulting from SQL-to-JSON conversion."
 );
 
 -- Source: bq/get/jsonStringMask.sql
