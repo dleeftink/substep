@@ -13,7 +13,7 @@ import sys
 from collections import defaultdict
 
 def extract_functions_and_deps(sql_content, valid_namespaces):
-    """Extract definitions and deps, stripping comments/strings for accuracy."""
+    """Extract definitions and deps, handling BQ chaining logic."""
     # 1. Strip comments
     sql_content = re.sub(r'--.*', '', sql_content)
     sql_content = re.sub(r'/\*.*?\*/', '', sql_content, flags=re.DOTALL)
@@ -27,19 +27,33 @@ def extract_functions_and_deps(sql_content, valid_namespaces):
     current_func_original = def_match.group(1).replace('`', '')
     current_func_lower = current_func_original.lower()
     
-    # 3. Strip strings (descriptions/options)
+    # 3. Strip strings
     sql_content = re.sub(r"'[^']*'", "''", sql_content)
     sql_content = re.sub(r'"[^"]*"', '""', sql_content)
 
-    # 4. Match calls using the namespace whitelist
     ns_regex = '|'.join(map(re.escape, valid_namespaces))
-    call_pattern = r'\b(' + ns_regex + r')\.([\w\-]+)(?!\w)'
-
+    
+    # Identify chains: matches .(ns.func)()
+    chain_pattern = r'\.\(\s*((' + ns_regex + r')\.[\w\-]+)\s*\)\(\)'
+    chains = [m[0].lower() for m in re.findall(chain_pattern, sql_content, re.IGNORECASE)]
+    
     deps_lower = set()
-    for match in re.finditer(call_pattern, sql_content, re.IGNORECASE):
-        dep_func_lower = match.group(0).lower().replace('`', '')
-        if dep_func_lower != current_func_lower:
-            deps_lower.add(dep_func_lower)
+    
+    # Link the chain: Right depends on Left
+    if chains:
+        for i in range(len(chains) - 1):
+            # Format: INTERNAL_DEP:right->left
+            deps_lower.add(f"INTERNAL_DEP:{chains[i+1]}->{chains[i]}")
+        # The parent function depends on the result of the final call in the chain
+        deps_lower.add(chains[-1])
+
+    # Find all standard calls (ns.func)
+    all_calls_pattern = r'\b(' + ns_regex + r')\.([\w\-]+)(?!\w)'
+    for match in re.finditer(all_calls_pattern, sql_content, re.IGNORECASE):
+        dep = f"{match.group(1)}.{match.group(2)}".lower()
+        # Only add if it's not the current function and NOT already handled as part of a chain
+        if dep != current_func_lower and dep not in chains:
+            deps_lower.add(dep)
             
     return current_func_lower, current_func_original, deps_lower
 
@@ -62,7 +76,6 @@ def main(excluded_namespaces):
 
     # Build the graph
     for root, dirs, files in os.walk(bq_dir):
-        # Skip excluded directories
         dirs[:] = [d for d in dirs if d.lower() not in excluded_namespaces]
         
         for file in files:
@@ -74,11 +87,25 @@ def main(excluded_namespaces):
                 func_lower, func_original, deps_lower = extract_functions_and_deps(content, namespaces)
                 if func_lower:
                     all_defined_funcs.add(func_lower)
-                    func_to_deps[func_lower] = deps_lower
                     func_to_path[func_lower] = path
                     func_to_original[func_lower] = func_original
+                    
+                    if func_lower not in func_to_deps:
+                        func_to_deps[func_lower] = set()
+
                     for dep in deps_lower:
-                        graph[dep].add(func_lower)
+                        if dep.startswith("INTERNAL_DEP:"):
+                            child, parent = dep.replace("INTERNAL_DEP:", "").split("->")
+                            if child not in func_to_deps:
+                                func_to_deps[child] = set()
+                            func_to_deps[child].add(parent)
+                        else:
+                            func_to_deps[func_lower].add(dep)
+
+    # After building func_to_deps, update the global graph
+    for caller, deps in func_to_deps.items():
+        for dep in deps:
+            graph[dep].add(caller)
 
     # Prepare for Topological Sort
     in_degree = {f: 0 for f in all_defined_funcs}
