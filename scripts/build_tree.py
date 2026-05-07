@@ -46,6 +46,6 @@ print_tree(meta_nodes, namespace_map)
 
 # 5. Render Individual Call Graphs
 for root in func_roots:
-    print(f"\n\nCALL GRAPH: {root}")
-    print("─" * (12 + len(root)))
+    print(f"\n\nCALL GRAPH: {root}()")
+    print("─" * (14 + len(root)))
     print_tree([root], deps_map)
