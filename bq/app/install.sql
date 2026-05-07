@@ -1,6 +1,6 @@
 /*
   BigQuery Dependency Tree
-  Generated: Sat May  2 10:46:50 AM UTC 2026
+  Generated: Thu May  7 03:24:40 AM UTC 2026
   -------------------------------------------
   Project Dependency Tree
   ───────────────────────
@@ -110,7 +110,7 @@ create or replace function fix.jsonKeyFragment(key STRING) as (
 -- Source: bq/fix/jsonPrimitives.sql
 CREATE OR REPLACE FUNCTION fix.jsonPrimitives(jsn STRING) AS (
   (jsn).REGEXP_REPLACE(r'("[^"]*"\s*:\s*(?:"[^"]*"|[\d\.]+|true|false|null))', r'"#":{\1},"#":#')
-); OPTIONS (
+) OPTIONS (
   description = "Wraps shallow JSON key/value pairs with temporary object boundaries."
 );
 
@@ -127,9 +127,7 @@ CREATE OR REPLACE FUNCTION fix.jsonSafeGuards(str STRING) AS (
 -- Source: bq/fix/jsonTuples.sql
 create or replace function fix.jsonTuples(jsn STRING) as (
   (jsn)
-    .regexp_replace(r'""\:([^\{\}\[\]]*?)\,""\:([^\{\}\[\]]*?)',r'\1:\2')
-    .regexp_replace(r'([\{\,])\s*([^"\:\{\[\]\}\s]+)(\s*\:)',  r'\1"\2"\3')
-
+    .regexp_replace(r'""\:"?([^\{\}\[\]]*?)"?\,""\:([^\{\}\[\]]*?)',r'"\1":\2')
     .replace('"":','"undefined":')
 ) OPTIONS (
   description = "Resolves empty:non-empty key/value sequences resulting from SQL-to-JSON conversion."
@@ -179,14 +177,17 @@ create or replace function get.jsonStringFromStruct(object ANY TYPE) as ((
 
 
 
-    select if(array_length(sql) = array_length(jsn),(
-      select string_agg(res,',' order by idx) from (
-        select idx,IF((jsonpart).translate('0123456789','0').contains_substr("0"),
+    select sql,if(array_length(sql) = array_length(jsn),
+
+      array_to_string(array(
+        select IF((jsonpart).translate('0123456789','0').contains_substr("0"),
           (jsonpart).REGEXP_REPLACE(r'^([^0-9]*)[0-9\.\s-]+([\]\}]*)$',
              (r'\1').CONCAT((sql[idx]).ltrim().REGEXP_REPLACE(r'[^0-9\.\s-]', ''), r'\2')
         ),jsonpart) as res from unnest(jsn) jsonpart with offset idx
-      )
-    ), error("Imbalanced SQL / JSON part arrays")) jsn from list
+        order by idx)
+      ,',')
+
+    , error("Imbalanced SQL / JSON part arrays")) jsn from list
 
   )
 
@@ -315,12 +316,12 @@ CREATE OR REPLACE FUNCTION lay.jsonSafeGuards(str STRING) AS (
   TRANSLATE(str,
     CODE_POINTS_TO_STRING([0x1C, 0x1D, 0x02, 0x03, 0x1E, 0x1F, 0x01, 0x04, 0x11, 0x13, 0x1B,0x05]),
     '{}[]:,<>()#"'
-) OPTIONS (
+)) OPTIONS (
   description = "Restores control-character markers back to their literal characters."
 );
 
 -- Source: bq/map/jsonSafeGuards.sql
-CREATE OR REPLACE FUNCTION map.jsonSafeGuards(jsn STRING, esc BOOL) AS ((
+CREATE OR REPLACE FUNCTION map.jsonSafeGuards(jsn STRING) AS ((
 
 
 
@@ -336,24 +337,22 @@ CREATE OR REPLACE FUNCTION map.jsonSafeGuards(jsn STRING, esc BOOL) AS ((
     ) AS part WITH OFFSET off
   )
 
-  SELECT
 
-
-    STRING_AGG(
+  select array_to_string(
+    array(SELECT
       IF(is_content,
-         CONCAT('"', fix.jsonSafeGuards(part, esc), '"'),
-         part),
-      '' ORDER BY off
-    )
+        CONCAT('"', fix.jsonSafeGuards(part), '"'),
+      part),
+    FROM chunks)
+  ,'')
 
-  FROM chunks
 )) OPTIONS (
   description = "Sanitizes quoted JSON fields by escaping reserved delimiters."
 );
 
 -- Source: bq/get/jsonStringMask.sql
 create or replace function get.jsonStringMask(object ANY TYPE) as (
-  (object).(get.jsonStringFromStruct)().(map.jsonSafeGuards)(true).(fix.jsonTuples)()
+  (object).(get.jsonStringFromStruct)().(map.jsonSafeGuards)().(fix.jsonTuples)()
 ) OPTIONS (
   description = "Serializes a SQL struct to JSON and applies control-character escaping for structural safety."
 );
