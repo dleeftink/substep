@@ -59,8 +59,13 @@ append_clean_sql() {
             s/;\s*$//;
         ' "$file_path" >> "$OUTPUT_FILE"
     else
-        perl -0777 -pe 's/\/\*.*?\*\///gs; s/--.*//g' "$file_path" | \
-        sed -e 's/[[:space:];]*$//' >> "$OUTPUT_FILE"
+        perl -0777 -pe '
+            s/\/\*.*?\*\///gs;         # 1. Remove block comments
+            s/--.*//g;                 # 2. Remove line comments
+            s/^\s+//;                  # 3. Trim leading whitespace/newlines
+            s/[[:space:];]*$//;        # 4. Trim trailing whitespace/semicolons
+            s/\n\s*\n+/\n\n/g;         # 5. Squeeze internal newlines
+        ' "$file_path" >> "$OUTPUT_FILE"
     fi
     echo -e ";" >> "$OUTPUT_FILE"
 }
