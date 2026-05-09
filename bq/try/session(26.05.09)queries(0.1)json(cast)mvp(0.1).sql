@@ -42,9 +42,14 @@ create or replace function tmp.getJsonSigFromArray(blob any type,tail int,scan i
 ));*/
 
 create or replace table function tmp.useJsonSchemaSampler4(input table<sig int,off int,jsn json>) as (
-from input |> select sig |> limit 1
-  |> select sig
-  
+from input 
+  |> where abs(mod(sig,100)) < 5
+  |> order by sig 
+  |> limit 4
+
+  --|> aggregate max_by(off,abs(sig)>61) off group by abs(sig) >> 61 sig
+  |> aggregate array_agg(struct(sig,off)) c
+  |> select as struct *
 );
 
 create or replace table function tmp.getJsonPathsThru4(input table<sig int64,off int64,jsn json>,constants any type) as (
@@ -60,8 +65,10 @@ create or replace table function tmp.getJsonPathsThru4(input table<sig int64,off
 
 
   -- B: broadcast pattern
-  -- select sig,array_agg((jsn).to_json_string().length() order by off) parts, any_value(c) constants,count(*) mag,count(distinct off) deg 
-  -- from init cross join unnest([constants]) c group by sig
+  -- select * except(c), c as constants from (
+  --   select sig,array_agg((jsn).to_json_string().length() order by off) parts,count(*) mag,count(distinct off) deg 
+  --   from init group by sig
+  -- ) cross join unnest([constants]) c
 
 );
 
@@ -70,7 +77,7 @@ create or replace table function tmp.getJsonPaths4(input table<src struct<parts 
   with init as (
      
     select src.sig /*^ (i+1)*/ sig,off,jsn from input get,get.src.parts jsn with offset off
-  
+
   ),
   
   exit as (
