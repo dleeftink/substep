@@ -1,4 +1,5 @@
 -- Generate signatures strategy G (direct any struct > JSON access):
+-- slight performance impact due to (blob).to_json() for the whole blob
 
 create or replace function tmp.getJsonSigFromAny1(blob any type,tail int,scan int) as ((
   select if(jsn[0] is not null,
