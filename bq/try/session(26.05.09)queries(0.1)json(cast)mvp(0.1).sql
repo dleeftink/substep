@@ -23,6 +23,23 @@ create or replace function tmp.getJsonSigFromArray(blob any type,tail int,scan i
 
 ));
 
+/*create or replace function tmp.getJsonSigFromArray(blob any type,tail int,scan int) as ((
+  select as struct array((
+    select (b).to_json() from (select b,i from unnest(blob) b with offset i) where if(tail is null,true,i > len - 2 - tail )
+    )) parts, farm_fingerprint(str) sig,length(str) rel,'array' type from (
+      select if(scan=0,
+        (blob[safe_offset(0)]).to_json_string()||(array_last(blob)).to_json_string(),
+
+        (select if(a=b,a,a||b) sttr from (
+        select
+          array_to_string(array(select blob[safe_offset(idx)].to_json_string().ifnull('') from unnest(indx) idx),'') a ,
+          array_to_string(array(select blob[safe_offset(array_length(blob)-1-idx)].to_json_string().ifnull('') from unnest(indx) idx),'')  b
+          from (select generate_array(0,scan) indx)
+        ))
+    ) as str,array_length(blob) len
+  )
+
+));*/
 
 create or replace table function tmp.useJsonSchemaSampler4(input table<sig int,jsn json>) as (
 from input |> select sig |> limit 1
@@ -33,11 +50,11 @@ from input |> select sig |> limit 1
 create or replace table function tmp.getJsonPathsThru4(input table<sig int64,jsn json>,constants any type) as (
 
   -- A: closure pattern
-  select sig,array_agg(struct((jsn).to_json_string().length()  as jsn, constants as c)) parts from input
-  group by sig
+  select sig,array_agg(distinct (jsn).to_json_string()) parts,any_value(constants) constants,count(*) dup from input
+  group by sig -- order by dup desc
 
   -- B: broadcast pattern
-  -- select sig,array_agg(struct((jsn).to_json_string().length()  as jsn,c)) parts from input
+  -- select sig,array_agg(struct((jsn).to_json_string().length()  as jsn,c constants)) parts from input
   -- cross join unnest([constants]) c group by sig
 
 );
@@ -46,8 +63,8 @@ create or replace table function tmp.getJsonPaths4(input table<src struct<parts 
 
   with init as (
      
-    select src.sig,jsn from input get,get.src.parts jsn
-    
+    select src.sig /*^ (i+1)*/ sig,jsn from input get,get.src.parts jsn -- with offset i
+  
   ),
   
   exit as (
@@ -60,14 +77,13 @@ create or replace table function tmp.getJsonPaths4(input table<src struct<parts 
 
 );
 
-
 with real as (
  
   select tmp.getJsonSigFromArray(blob,tail=>1,scan=>0) src from (
     select
       hits as blob
     from (
-      select * from `stack-curves.tables.hits` -- limit 15
+      select * from `stack-curves.tables.hits`  limit 15
     ) --get,get.hits hit
   )
 )
