@@ -59,8 +59,8 @@ create or replace table function tmp.getJsonPathsThru4(input table<sig int64,off
     group by sig,off
   )
 
-  -- A: closure pattern
-  select sig,array_agg((jsn).to_json_string().length() order by off) parts, constants,count(*) mag,count(distinct off) deg 
+  -- A: closure pattern + force an early dependency
+  select sig ^ constants.c[0].sig sig,array_agg((jsn).to_json_string().length() order by off) parts,count(*) mag,count(distinct off) deg 
   from init group by sig -- order by dup desc
 
 
