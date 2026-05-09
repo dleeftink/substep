@@ -1,18 +1,46 @@
 -- Generate signatures strategy G (direct any struct > JSON access):
--- slight performance impact due to (blob).to_json() for the whole blob
 
 create or replace function tmp.getJsonSigFromAny1(blob any type,tail int,scan int) as ((
   select if(jsn[0] is not null,
   
-    --(select as struct array(select * from unnest(jsns) jsn with offset idx |> where idx < 1 |> select jsn) jsns from (select json_query_array(jsn) jsns)),
-    (select as struct array_agg(if(incTail,json 'null',null) ignore nulls) parts,bit_xor(if(incScan,farm_fingerprint(str),null)) sig,sum(if(incTail,length(str),null)) rel,'array' type from (
-        select *,tail is null or i > len - 2 - tail incTail, scan is null or i not between scan and len - 1 - scan or (i = 0 or i = len -1) incScan from (
-          select i,obj,safe.format('%t',obj) str,array_length(jsns) len, 
-          from ( select json_query_array(jsn) jsns) get,get.jsns obj with offset i)
-        )
+    -- Array strategy A1 (dynamic signature from separate tail and scan)
+    -- (select as struct array_agg(if(incTail,json 'null',null) ignore nulls) parts,bit_xor(if(incScan,farm_fingerprint(str),null)) sig,sum(if(incTail,length(str),null)) rel,'array' type from (
+    --    select *,tail is null or i > len - 2 - tail incTail, scan is null or i not between scan and len - 1 - scan or (i = 0 or i = len -1) incScan from (
+    --      select i,obj,
+    --      safe.format('%t',obj) str,
+    --      --(obj).to_json_string() str,
+    --      --array_length(jsns) len, 
+    --      --from ( select json_query_array(jsn) jsns) get,get.jsns obj with offset i
+    --      max(i) over()+1 len
+    --      from unnest(json_query_array(jsn)) obj with offset i
+    --    )
+    --   )
+    -- ),
+
+    -- Array Strategy A2 (dynamic signature from tail only)
+     (select as struct array_agg(obj) parts,bit_xor(farm_fingerprint(str)) sig,sum(length(str)) rel,'array' type from (
+       
+          select i,obj,safe.format('%t',obj) str,
+          array_length(jsns) len, 
+          from ( select json_query_array(jsn) jsns) get,get.jsns obj with offset i
+          -- max(i) over()+1 len
+          -- from unnest(json_query_array(jsn)) obj with offset i
+        ) where tail is null or i > len - 2 - tail -- or i = 0 
+        
       ),
-  
+
+    -- Array Strategy B (static signature from first and last element)
+    -- (select as struct array(select json 'null' /*obj*/ from unnest(dat)), 
+    -- (array_first(dat).sig ^ array_last(dat).sig).nullif(0).ifnull(dat[0].sig) sig,array_first(dat).rel + array_last(dat).rel rel,'array' type from (select array((
+    --     select as struct obj,farm_fingerprint(str) sig ,length(str) rel from (
+    --       select i,obj,safe.format('%t',obj) str,array_length(jsns) len, 
+    --       from ( select json_query_array(jsn) jsns) get,get.jsns obj with offset i
+    --   ) where tail is null or i > len - 2 - tail --  where scan is null or i not between scan and len - 1 - scan or (i = 0 /*or i = len -1*/)
+    -- )) as dat)),
+    
+    -- Object strategy
     (select as struct [jsn] parts,farm_fingerprint(str) sig,length(str) rel,'object' type from (select safe.format('%t',blob) str))
+    
   ) jsn
   from (
     select (blob).to_json() jsn
