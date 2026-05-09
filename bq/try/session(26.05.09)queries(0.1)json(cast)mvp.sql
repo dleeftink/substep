@@ -1,4 +1,6 @@
 -- Generate signatures strategy F (direct array of structs access):
+-- requires two different function calls depending on source type (struct or array)
+
 create or replace function tmp.getJsonSigFromStruct(blob any type) as (
  (select as struct [(blob).to_json()] parts,farm_fingerprint(str) sig,length(str) rel,'object' type from (select safe.format('%t',blob) str))
 );
