@@ -2,7 +2,6 @@ install_order:
 - fix.jsonKeyFragment
 - fix.jsonPrimitives
 - fix.jsonSafeGuards
-- fix.jsonTuples
 - get.characterIndices
 - get.jsonKeyFragment
 - get.jsonKeyIndex
@@ -14,6 +13,7 @@ install_order:
 - get.jsonObjectBoundaries
 - lay.jsonSafeGuards
 - map.jsonSafeGuards
+- fix.jsonTuples
 - get.jsonStringMask
 - map.objectContainment
 - use.unroller
@@ -30,14 +30,13 @@ dependencies:
   fix.jsonKeyFragment: []
   fix.jsonPrimitives: []
   fix.jsonSafeGuards: []
-  fix.jsonTuples: []
   get.characterIndices: []
   get.jsonKeyFragment: []
   get.jsonKeyIndex: []
   get.jsonStringFromStruct: []
   lay.jsonPrimitives: []
   get.jsonObjectFragment:
-  - lay.jsonPrimitives
+  - lay.jsonPrimitives(chained)
   cue.jsonObjectInterface:
   - get.jsonKeyFragment
   - get.jsonObjectFragment
@@ -50,18 +49,19 @@ dependencies:
   lay.jsonSafeGuards: []
   map.jsonSafeGuards:
   - fix.jsonSafeGuards
+  - get.jsonStringFromStruct(chained)
+  fix.jsonTuples:
+  - map.jsonSafeGuards(chained)
   get.jsonStringMask:
-  - fix.jsonTuples
-  - get.jsonStringFromStruct
-  - map.jsonSafeGuards
+  - fix.jsonTuples(chained)
   map.objectContainment: []
   use.unroller:
+  - fix.jsonPrimitives(chained)
   - get.characterIndices
   - get.jsonObjectBoundaries
   - map.objectContainment
   get.unrolled:
-  - fix.jsonPrimitives
-  - use.unroller
+  - use.unroller(chained)
   cue.meta: []
   def.meta: []
   fix.meta: []
@@ -72,12 +72,11 @@ dependencies:
   use.parser:
   - get.jsonStringMask
   - get.unrolled
-  - lay.jsonSafeGuards
+  - lay.jsonSafeGuards(chained)
 path_map:
   fix.jsonKeyFragment: bq/fix/jsonKeyFragment.sql
   fix.jsonPrimitives: bq/fix/jsonPrimitives.sql
   fix.jsonSafeGuards: bq/fix/jsonSafeGuards.sql
-  fix.jsonTuples: bq/fix/jsonTuples.sql
   get.characterIndices: bq/get/characterIndices.sql
   get.jsonKeyFragment: bq/get/jsonKeyFragment.sql
   get.jsonKeyIndex: bq/get/jsonKeyIndex.sql
@@ -89,6 +88,7 @@ path_map:
   get.jsonObjectBoundaries: bq/get/jsonObjectBoundaries.sql
   lay.jsonSafeGuards: bq/lay/jsonSafeGuards.sql
   map.jsonSafeGuards: bq/map/jsonSafeGuards.sql
+  fix.jsonTuples: bq/fix/jsonTuples.sql
   get.jsonStringMask: bq/get/jsonStringMask.sql
   map.objectContainment: bq/map/objectContainment.sql
   use.unroller: bq/use/unroller.sql
