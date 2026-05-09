@@ -41,21 +41,27 @@ create or replace function tmp.getJsonSigFromArray(blob any type,tail int,scan i
 
 ));*/
 
-create or replace table function tmp.useJsonSchemaSampler4(input table<sig int,jsn json>) as (
+create or replace table function tmp.useJsonSchemaSampler4(input table<sig int,off int,jsn json>) as (
 from input |> select sig |> limit 1
   |> select sig
   
 );
 
-create or replace table function tmp.getJsonPathsThru4(input table<sig int64,jsn json>,constants any type) as (
+create or replace table function tmp.getJsonPathsThru4(input table<sig int64,off int64,jsn json>,constants any type) as (
+
+  with init as (
+    select sig,off,max_by(jsn,off) jsn from input 
+    group by sig,off
+  )
 
   -- A: closure pattern
-  select sig,array_agg(distinct (jsn).to_json_string()) parts,any_value(constants) constants,count(*) dup from input
-  group by sig -- order by dup desc
+  select sig,array_agg((jsn).to_json_string().length() order by off) parts, constants,count(*) mag,count(distinct off) deg 
+  from init group by sig -- order by dup desc
+
 
   -- B: broadcast pattern
-  -- select sig,array_agg(struct((jsn).to_json_string().length()  as jsn,c constants)) parts from input
-  -- cross join unnest([constants]) c group by sig
+  -- select sig,array_agg((jsn).to_json_string().length() order by off) parts, any_value(c) constants,count(*) mag,count(distinct off) deg 
+  -- from init cross join unnest([constants]) c group by sig
 
 );
 
@@ -63,7 +69,7 @@ create or replace table function tmp.getJsonPaths4(input table<src struct<parts 
 
   with init as (
      
-    select src.sig /*^ (i+1)*/ sig,jsn from input get,get.src.parts jsn -- with offset i
+    select src.sig /*^ (i+1)*/ sig,off,jsn from input get,get.src.parts jsn with offset off
   
   ),
   
