@@ -6,7 +6,7 @@ create temp function getCharacterIndices(str string,rgx string) as (array(
 
   select as struct idx,(
     case
-    when (sub).ends_with('<') then struct('<' as mark,(sub).rtrim('<').regexp_replace(r'^.* ','') as type,null as item)
+    when (sub).ends_with('<') then struct('<' as mark,(sub).rtrim('<').regexp_replace(r'^.* ','') as type,(sub).regexp_replace(r'[^ ][A-Z<]+$','').nullif('') as item)
     when (sub).ends_with('>') then struct('>' as mark,null as type,null as item)
     else (select struct(cast(null as string) as mark,s[safe_offset(1)] as type,s[safe_offset(0)] as item) from (select (sub).split(' ') s)) -- be careful: keys may contain spaces
     end
@@ -54,12 +54,12 @@ nest as (
         sum(case when mark = '<' then 1 when mark = '>' then -1 else 0 end) over(w1) - 1 as depth
       window 
         w1 as (order by idx rows between unbounded preceding and current row)
-    |> extend depth - (case when mark = '<' then 1 when mark = '>' then -1 /*else 0*/ end) as pre
+    |> extend depth - (case when mark = '<' then 1 when mark = '>' then -1 else 0 end) as pre
     |> select pre,depth,* except(pre,depth)
 
     |> cross join unnest(generate_array(0,/*if(pre+1<deepest,1,0)*/1)) raise
     |> select *
-    |> set pre = pre + raise, depth = depth+raise,raise = if(raise = 0,true,false) 
+    |> set pre = pre + raise /*+ if(mark is null,1,0)*/, depth = depth + raise /*+ if(mark is null,1,0)*/,raise = if(raise = 0,true,false) 
 
     |> aggregate array_agg(struct(pre > depth as pin,raise,idx,mark,type,item) order by idx) subs
        group by raise,pre a,depth b
@@ -73,10 +73,11 @@ nest as (
 
     |> cross join unnest(subs) obj
     |> aggregate min_by(obj,pin) head,max_by(obj,pin) tail group by a,b,slot,raise
-
-    |> select as struct head.raise,b as depth,slot,a as pre,head.idx as open,tail.idx as close,head.mark head,head.type,head.item,tail.mark tail
-    --|> where raise
+    |> select head.raise,b as depth,slot,a as pre,head.idx as open,tail.idx as close,head.mark head,head.type,head.item,tail.mark tail
+    |> where raise
     
+    |> select as struct *
+    |> order by depth,open
 
 
   ) key from char
