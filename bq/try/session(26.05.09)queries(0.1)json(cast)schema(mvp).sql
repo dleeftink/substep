@@ -61,26 +61,29 @@ create or replace function tmp.getCharacterIndices5(str string,rgx string) as (a
 -- Generate signatures strategy F (direct array of structs access):
 -- requires two different function calls depending on source type (struct or array)
 
-create or replace function tmp.getJsonSigFromStruct(blob any type,schema string) as (
- (select as struct schema,[(blob).to_json()] parts,farm_fingerprint(str) sig,length(str) rel,'object' type from (select safe.format('%t',blob) str))
-);
+create or replace function tmp.getJsonSigFromStruct(blob any type,schema string) as ((
+  select as struct schema,[(blob).to_json()] parts,farm_fingerprint(str) sig,length(str) rel,'object' type 
+  from (select safe.format('%t',blob) str)
+));
 
 create or replace function tmp.getJsonSigFromArray(blob any type,schema string,tail int,scan int) as ((
   select as struct schema,array((
-    select (b).to_json() from (select b,i from unnest(blob) b with offset i) where if(tail is null,true,i > len - 2 - tail )
-    )) parts, farm_fingerprint(str) sig,length(str) rel,'array' type from (
-      select if(scan=0,
-        safe.format('%t',blob[0])||safe.format('%t',array_last(blob)),
-
-        (select if(a=b,a,a||b) sttr from (
-        select
-          array_to_string(array(select safe.format('%t',blob[safe_offset(idx)]).ifnull('') from unnest(indx) idx),'') a ,
-          array_to_string(array(select safe.format('%t',blob[safe_offset(array_length(blob)-1-idx)]).ifnull('') from unnest(indx) idx),'')  b
-          from (select generate_array(0,scan) indx)
-        ))
-    ) as str,array_length(blob) len
+    select (b).to_json() from (select b,i from unnest(blob) b with offset i) 
+    where if(tail is null,true,i > len - 2 - tail ))
+  ) as parts, farm_fingerprint(str) sig,length(str) rel,'array' type 
+  from (
+    select if(a=b,a,a||b) str,array_length(blob) len from (
+      select
+        if(scan=0, safe.format('%t',blob[0]),
+        array_to_string(array(select safe.format('%t',blob[safe_offset(idx)]).ifnull('') from unnest(index) idx),'')) 
+        as a,
+        
+        if(scan=0, safe.format('%t',array_last(blob)),
+        array_to_string(array(select safe.format('%t',blob[safe_offset(array_length(blob)-1-idx)]).ifnull('') from unnest(index) idx),''))
+        as b
+      from (select generate_array(0,scan) index)
+    )
   )
-
 ));
 
 create or replace function tmp.getSchemaObjects5 (src any type) as (array(
