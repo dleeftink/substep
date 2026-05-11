@@ -52,7 +52,7 @@ create temp function getCharacterIndices(str string,rgx string) as (array(
 
   select as struct idx,(
     case
-    when (sub).ends_with('<') then struct('<' as mark,(sub).rtrim('<').regexp_replace(r'^.*\s','') as type,(sub).regexp_replace(r'[^\s][A-Z<]+$','').nullif('') as item)
+    when (sub).ends_with('<') then struct('<' as mark,(sub).rtrim('<').regexp_extract(r'#(.*)$') as type,(sub).regexp_replace(r'[^\s][A-Z<]+$','').nullif('') as item)
     when (sub).ends_with('>') then struct('>' as mark,null as type,null as item)
     else struct(cast(null as string) as mark, regexp_extract(sub,r'#(.*)$') as type,regexp_extract(sub,r'^(.*)#').ifnull(sub) as item)
     --(select struct(cast(null as string) as mark,s[safe_offset(1)] as type,sub as item) from (select (sub).split('#') s)) -- be careful: keys may contain spaces
@@ -91,16 +91,16 @@ prep as (
 char as (
   
   select sel,
-    val keystr,(key).replace(' ','#').getCharacterIndices(r'((?:[<>]?)(?:ARRAY|STRUCT)(?:[<>]?)|[<>]|(?:[^#,]+#[A-Z0-9]+[<]?))') as key, -- encode remaining structural spaces as '#'
-    (val).getCharacterIndices(r'((?:[<>]?)(?:ARRAY|STRUCT)(?:[<>]?)|[<>]|"(?:[^"]*?)"|\'(?:[^\']*?)\'|(?:[^ ,<>]+?))') val,
+    key keystr,(key).replace(' ','#').getCharacterIndices(r'((?:[<>]?)(?:ARRAY|STRUCT)(?:[<>]?)|[<>]|(?:[^#,]+#[A-Z0-9]+[<]?))') as key, -- encode remaining structural spaces as '#'
+    val valstr,(val).getCharacterIndices(r'((?:[<>]?)(?:ARRAY|STRUCT)(?:[<>]?)|[<>]|"(?:[^"]*?)"|\'(?:[^\']*?)\'|(?:[^ ,<>]+?))') val,
   from prep
 
 ),
 
 nest as (
 
-  select keystr,array(
-    from unnest(val)
+  select array(
+    from unnest(key)
     |> extend sum(case when mark = '<' then 1 when mark = '>' then -1 else 0 end) over(w1) - 1 as depth
        window w1 as (order by idx rows between unbounded preceding and current row)
     |> extend depth - (case when mark = '<' then 1 when mark = '>' then -1 else 0 end) as pre
