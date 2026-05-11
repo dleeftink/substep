@@ -1,4 +1,4 @@
-CREATE OR REPLACE FUNCTION tmp.fixJsonSafeGuards5(str STRING, chars string, codes array<int>) AS (
+/*CREATE OR REPLACE FUNCTION tmp.fixJsonSafeGuards5(str STRING, chars string, codes array<int>) AS (
   TRANSLATE(str, 
     chars, -- '{}[]:,<>()#', 
     CODE_POINTS_TO_STRING(codes)
@@ -14,7 +14,7 @@ CREATE OR REPLACE FUNCTION tmp.layJsonSafeGuards5(str STRING, chars string, code
     chars -- '{}[]:,<>()#"'
 )) OPTIONS (
   description = "Restores control-character markers back to their literal characters."
-);
+);*/
 
 CREATE OR REPLACE FUNCTION tmp.mapStringSafeGuards5(str STRING, chars string, codes array<int>) AS ((
 
@@ -52,7 +52,7 @@ create temp function getCharacterIndices(str string,rgx string) as (array(
 
   select as struct idx,(
     case
-    when (sub).ends_with('<') then struct('<' as mark,(sub).rtrim('<').regexp_extract(r'#(.*)$') as type,(sub).regexp_replace(r'[^\s][A-Z<]+$','').nullif('') as item)
+    when (sub).ends_with('<') then struct('<' as mark,(sub).rtrim('<').regexp_replace(r'^(.*)#','') as type,(sub).regexp_replace(r'[^\s][A-Z<]+$','').nullif('') as item)
     when (sub).ends_with('>') then struct('>' as mark,null as type,null as item)
     else struct(cast(null as string) as mark, regexp_extract(sub,r'#(.*)$') as type,regexp_extract(sub,r'^(.*)#').ifnull(sub) as item)
     --(select struct(cast(null as string) as mark,s[safe_offset(1)] as type,sub as item) from (select (sub).split('#') s)) -- be careful: keys may contain spaces
@@ -73,6 +73,19 @@ with test as (
   ])
 ),
 
+-- processing gets prohibitively expensive for real data
+
+real as (
+ 
+  select typeof(blob) type,blob,null as sel from (
+    select
+      hit as blob
+    from (
+      select * from `stack-curves.tables.hits`  -- limit 15
+    ) get,get.hits hit -- limit 1
+  )
+),
+
 prep as (
 
   -- interesting: causes query plan unrolloing
@@ -82,7 +95,7 @@ prep as (
     select sel, array(select as struct STR SRC,(str).(tmp.mapStringSafeGuards5)(chars,codes) str,chars,codes
       from unnest([
         struct((type).replace('`','"') as str,'{}[]:,<>()# ' as chars,[0x1C, 0x1D, 0x02, 0x03, 0x1E, 0x1F, 0x01, 0x04, 0x11, 0x13, 0x1B,0x00] as codes), -- remember: 0x05 is reserved for double quote
-        struct(format('%T',blob) as str,'<>#' as chars,[0x01, 0x04, 0x1B] as codes)]) -- can be quite sparse with encoding here. as we extract double quotes anyways
+        struct(safe.format('%T',blob) as str,'<>#' as chars,[0x01, 0x04, 0x1B] as codes)]) -- can be quite sparse with encoding here. as we extract double quotes anyways
     ) strs from test
   )
 
@@ -92,7 +105,7 @@ char as (
   
   select sel,
     key keystr,(key).replace(' ','#').getCharacterIndices(r'((?:[<>]?)(?:ARRAY|STRUCT)(?:[<>]?)|[<>]|(?:[^#,]+#[A-Z0-9]+[<]?))') as key, -- encode remaining structural spaces as '#'
-    val valstr,(val).getCharacterIndices(r'((?:[<>]?)(?:ARRAY|STRUCT)(?:[<>]?)|[<>]|"(?:[^"]*?)"|\'(?:[^\']*?)\'|(?:[^ ,<>]+?))') val,
+    val valstr,(val).getCharacterIndices(r'((?:[<>]?)(?:ARRAY|STRUCT)(?:[<>]?)|[<>]|"(?:[^"]*?)"|\'(?:[^\']*?)\'|(?:[^ ,<>]+))') val,
   from prep
 
 ),
@@ -128,12 +141,10 @@ nest as (
     |> select as struct *,
     |> order by depth,open
 
-
   ) key from char
-
 
 )
 
 --select array(select as struct *,countif(mark = '<') over(),countif(mark = '>') over() from unnest(key) where mark in ('<','>')) from char
 
-select * from nest
+select array_last(key) from char
