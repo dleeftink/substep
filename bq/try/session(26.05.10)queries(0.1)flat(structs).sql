@@ -67,8 +67,6 @@ nest as (
     |> select a,b,subs 
     |> where a < /*pick*/10 + 1 
     |> set a = if(a > b,b,a), b = if(a > b,a,b)
-
-
     |> set subs = array(select as struct slot,* except(slot) from unnest(subs) with offset as slot )
 
     |> cross join unnest(subs) obj
