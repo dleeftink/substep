@@ -34,16 +34,16 @@ real as (
  
   select typeof(blob) type,blob,null as sel from (
     select
-      hits as blob
+      hit as blob
     from (
-      select * from `stack-curves.tables.hits` limit 1
-    ) --get,get.hits hit -- limit 1
+      select * from `stack-curves.tables.hits` -- limit 1
+    ) get,get.hits hit -- limit 1
   )
 ),
 
 prep as (
 
-  select safe.format('%T',blob) str,safe.format('%T',blob).getStructuralChars(
+  select str,(str).getStructuralChars(
   ('('||[
     r'"[^"]*"', -- double quoted fields
     r'\'[^\']*\'', -- single quoted fields
@@ -54,7 +54,9 @@ prep as (
     r'[^\'"\[\]\(\)]+' -- remaining values (squash)
     --r'[^\'"\[\]\(\), ]+' -- remaining values (split)
     ].array_to_string('|')||')')
-  ) val from real
+  ) val from (
+    select *,safe.format('%T',blob) str from test
+  )
 
 ),
 
@@ -62,17 +64,18 @@ nest as (
 
   select str,array(
     from unnest(val)
-    |> extend sum(case when mark in ('(','[') then 1 when mark in (']',')') then -1 else 0 end) over(w1) - 1 as depth
+    |> extend mark in ('(','[') as opener, mark in (']',')') as closer,type in ('VALUE(S)','STRING') as entry
+    |> extend sum(case when opener then 1 when closer then -1 else 0 end) over(w1) - 1 as depth
        window w1 as (order by idx rows between unbounded preceding and current row)
 
-    |> extend depth - (case when mark in ('(','[') then 1 when mark in (']',')') then -1 else 0 end) as pre
-    |> extend if(type in ('VALUE(S)','STRING'),1,0) as lift
+    |> extend depth - (case when opener then 1 when closer then -1 else 0 end) as pre
+    |> extend if(entry,1,0) as lift
 
     |> select pre,depth,* except(pre,depth)
     |> cross join unnest(generate_array(0,/*if(pre+1<deepest,1,0)*/1)) raise
     |> set pre = pre + raise + lift, depth = depth + raise + lift,raise = if(raise = 0,true,false) 
 
-    |> aggregate array_agg(struct(pre > depth as pin,raise,idx,mark,type,item) order by idx) subs
+    |> aggregate array_agg(struct(pre > depth as pin,raise,idx,mark,type,item,entry) order by idx) subs
        group by raise,pre a,depth b
     
     |> select a,b,subs
@@ -82,7 +85,7 @@ nest as (
     |> cross join unnest(subs) obj with offset as slot 
     |> aggregate min_by(obj,pin) head,max_by(obj,pin) tail group by a,b,slot,raise
     |> select 
-        head.raise,b as depth,slot,head.idx as open,tail.idx + if(head.type in ('VALUE(S)','STRING'),length(head.item).ifnull(0),0) as close,
+        head.raise,b as depth,slot,head.idx as open,tail.idx + if(head.entry,length(head.item).ifnull(0),0) as close,
         head.mark head,head.type,head.item as data,tail.mark tail,--null as part
 
     -- |> set data = coalesce(data,substring(str,open,close-open).left(16).concat('...')) -- check if correct
@@ -103,5 +106,5 @@ nest as (
 
 )
 
-select str,* -- (vals).array_last().children.array_last().data 
+select * -- (vals).array_first().children.array_last().data 
   from nest
