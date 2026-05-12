@@ -1,3 +1,5 @@
+-- Decide: a SQL only parser (merge schema + values), combined (json keys+values + signature from SQL) or JSON only (JSON type + json_string parsing)
+
 create temp function getStructuralChars(str string,rgx string) as (array(
   with init as (
     select (SUM(LENGTH(sub)) OVER (ORDER BY off ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) + 1).ifnull(0) idx, sub,left(sub,1) open
