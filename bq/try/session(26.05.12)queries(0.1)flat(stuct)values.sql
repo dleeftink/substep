@@ -1,5 +1,3 @@
--- Decide: a SQL only parser (merge schema + values), combined (json keys+values + signature from SQL) or JSON only (JSON type + json_string parsing)
-
 create temp function getStructuralChars(str string,rgx string) as (array(
   with init as (
     select (SUM(LENGTH(sub)) OVER (ORDER BY off ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) + 1).ifnull(0) idx, sub,left(sub,1) open
@@ -16,6 +14,22 @@ create temp function getStructuralChars(str string,rgx string) as (array(
   ).* from init  where sub != ', '
 ));
 
+create temp function getJsonIndex(str string,rgx string) as (array(
+  with init as (
+    select /*(SUM(LENGTH(sub)) OVER (ORDER BY off ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) + 1).ifnull(0)*/ off idx, sub,right(sub,1) close
+    from unnest(regexp_extract_all(str,rgx)) AS sub WITH OFFSET AS off
+  )
+
+  select as struct idx,(
+    case
+    when sub in ('[',']') then struct(sub as mark,'ARRAY' as type,null as item)
+    when sub in ('{','}') then struct(sub as mark,'OBJECT' as type,null as item)
+    when close = ':' then struct(close as mark,'KEY' as type,sub as item)
+    when close in ('\'','"') then struct(close as mark,'STRING' as type,sub as item)
+    else struct(cast(null as string) as mark, 'VALUE(S)' as type,sub as item)
+    end
+  ).* from init  where sub != ', '
+));
 
 with test as (
 
@@ -36,10 +50,10 @@ real as (
  
   select typeof(blob) type,blob,null as sel from (
     select
-      hit as blob
+      hits as blob
     from (
       select * from `stack-curves.tables.hits` -- limit 1
-    ) get,get.hits hit -- limit 1
+    ) -- get,get.hits hit -- limit 1
   )
 ),
 
@@ -108,5 +122,16 @@ nest as (
 
 )
 
-select * -- (vals).array_first().children.array_last().data 
-  from nest
+-- select * -- (vals).array_first().children.array_last().data 
+--   from nest
+
+
+select (blob).array_slice(0,4).to_json_string().replace('\\"','\x05').getJsonIndex(
+  ('('||[
+    r'"[^"]*":?', -- double quoted fields
+    r'[\[\]\{\}]', -- structural markers
+
+    r'\, ', 
+    r'[^\'"\[\]\{\}, ]+' -- remaining values (split)
+    ].array_to_string('|')||')')
+  ) val from real -- limit 15 
