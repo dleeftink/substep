@@ -76,13 +76,13 @@ nest as (
        group by raise,pre a,depth b
     
     |> select a,b,subs
-    |> where a < /*pick*/2 + 1 
+    |> where a < /*pick*/10 + 1 
     |> set a = if(a > b,b,a), b = if(a > b,a,b)
 
     |> cross join unnest(subs) obj with offset as slot 
     |> aggregate min_by(obj,pin) head,max_by(obj,pin) tail group by a,b,slot,raise
     |> select 
-        head.raise,b as depth,slot,head.idx as open,tail.idx + if(head.mark is null,length(head.item).ifnull(0),0) as close,
+        head.raise,b as depth,slot,head.idx as open,tail.idx + if(head.type in ('VALUE(S)','STRING'),length(head.item).ifnull(0),0) as close,
         head.mark head,head.type,head.item as data,tail.mark tail,--null as part
 
     -- |> set data = coalesce(data,substring(str,open,close-open).left(16).concat('...')) -- check if correct
