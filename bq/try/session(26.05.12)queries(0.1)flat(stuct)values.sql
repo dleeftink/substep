@@ -9,7 +9,7 @@ create temp function getStructuralChars(str string,rgx string) as (array(
     when sub in ('[',']') then struct(sub as mark,'ARRAY' as type,null as item)
     when sub in ('(',')') then struct(sub as mark,'STRUCT' as type,null as item)
     when open in ('\'','"') then struct(open as mark,'STRING' as type,sub as item)
-    else struct(cast(null as string) as mark, null as type,sub as item)
+    else struct(cast(null as string) as mark, 'VALUE(S)' as type,sub as item)
     end
   ).* from init  where sub != ', '
 ));
@@ -33,10 +33,10 @@ real as (
  
   select typeof(blob) type,blob,null as sel from (
     select
-      hits as blob
+      hit as blob
     from (
-      select * from `stack-curves.tables.hits`  -- limit 512
-    ) -- get,get.hits hit -- limit 1
+      select * from `stack-curves.tables.hits` limit 1
+    ) get,get.hits hit -- limit 1
   )
 ),
 
@@ -63,11 +63,12 @@ nest as (
     from unnest(val)
     |> extend sum(case when mark in ('(','[') then 1 when mark in (')',']') then -1 else 0 end) over(w1) - 1 as depth
        window w1 as (order by idx rows between unbounded preceding and current row)
+
     |> extend depth - (case when mark in ('(','[')  then 1 when mark in (')',']') then -1 else 0 end) as pre
-    |> select pre,depth,* except(pre,depth)
+    |> select pre,depth,* except(pre,depth), if(type in ('VALUE(S)','STRING'),1,0) as lift
 
     |> cross join unnest(generate_array(0,/*if(pre+1<deepest,1,0)*/1)) raise
-    |> set pre = pre + raise /*+ if(mark is null,1,0)*/, depth = depth + raise /*+ if(mark is null,1,0)*/,raise = if(raise = 0,true,false) 
+    |> set pre = pre + raise + lift, depth = depth + raise + lift ,raise = if(raise = 0,true,false) 
 
     |> aggregate array_agg(struct(pre > depth as pin,raise,idx,mark,type,item) order by idx) subs
        group by raise,pre a,depth b
@@ -81,17 +82,22 @@ nest as (
     |> aggregate min_by(obj,pin) head,max_by(obj,pin) tail group by a,b,slot,raise
     |> select 
         head.raise,b as depth,slot,head.idx as open,tail.idx + if(head.mark is null,length(head.type).ifnull(0)+length(head.item).ifnull(0)+1,0) as close,
-        head.mark head,head.type,head.item,tail.mark tail,--null as part
-    --|> set item = coalesce(item,substring(keystr,open,close-open).left(16).concat('...'))
-    |> where raise
+        head.mark head,head.type,head.item as data,tail.mark tail,--null as part
+
+    |> as obj
+    |> aggregate
+        array_agg(if(raise,obj,null) ignore nulls order by obj.open) children,
+        array_agg(if(not raise and type in ("STRUCT","ARRAY"),obj,null) ignore nulls order by obj.open) parents,
+        array_agg(if(not raise and type in ("STRUCT","ARRAY"),obj.close,null) ignore nulls order by obj.open) looks group by depth
+    |> where array_length(children) > 0   
+
     
     |> select as struct *,
     --|> order by depth,open
 
-  ) key from prep
+  ) as vals from prep
 
 )
 
---select format('%T',blob) from test
-
-select (key).array_last().close from nest
+select * -- (key).array_last().children.array_last().data 
+  from nest
