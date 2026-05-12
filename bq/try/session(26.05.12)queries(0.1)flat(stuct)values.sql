@@ -1,6 +1,6 @@
 create temp function getStructuralChars(str string,rgx string) as (array(
   with init as (
-    select SUM(LENGTH(sub)) OVER (ORDER BY off ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING).ifnull(0) idx, sub,left(sub,1) open
+    select (SUM(LENGTH(sub)) OVER (ORDER BY off ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) + 1).ifnull(0) idx, sub,left(sub,1) open
     from unnest(regexp_extract_all(str,rgx)) AS sub WITH OFFSET AS off
   )
 
@@ -13,6 +13,7 @@ create temp function getStructuralChars(str string,rgx string) as (array(
     end
   ).* from init  where sub != ', '
 ));
+
 
 with test as (
 
@@ -33,16 +34,16 @@ real as (
  
   select typeof(blob) type,blob,null as sel from (
     select
-      hit as blob
+      hits as blob
     from (
       select * from `stack-curves.tables.hits` limit 1
-    ) get,get.hits hit -- limit 1
+    ) --get,get.hits hit -- limit 1
   )
 ),
 
 prep as (
 
-  select safe.format('%T',blob).getStructuralChars(
+  select safe.format('%T',blob) str,safe.format('%T',blob).getStructuralChars(
   ('('||[
     r'"[^"]*"', -- double quoted fields
     r'\'[^\']*\'', -- single quoted fields
@@ -59,45 +60,48 @@ prep as (
 
 nest as (
 
-  select array(
+  select str,array(
     from unnest(val)
-    |> extend sum(case when mark in ('(','[') then 1 when mark in (')',']') then -1 else 0 end) over(w1) - 1 as depth
+    |> extend sum(case when mark in ('(','[') then 1 when mark in (']',')') then -1 else 0 end) over(w1) - 1 as depth
        window w1 as (order by idx rows between unbounded preceding and current row)
 
-    |> extend depth - (case when mark in ('(','[')  then 1 when mark in (')',']') then -1 else 0 end) as pre
-    |> select pre,depth,* except(pre,depth), if(type in ('VALUE(S)','STRING'),1,0) as lift
+    |> extend depth - (case when mark in ('(','[') then 1 when mark in (']',')') then -1 else 0 end) as pre
+    |> extend if(type in ('VALUE(S)','STRING'),1,0) as lift
 
+    |> select pre,depth,* except(pre,depth)
     |> cross join unnest(generate_array(0,/*if(pre+1<deepest,1,0)*/1)) raise
-    |> set pre = pre + raise + lift, depth = depth + raise + lift ,raise = if(raise = 0,true,false) 
+    |> set pre = pre + raise + lift, depth = depth + raise + lift,raise = if(raise = 0,true,false) 
 
     |> aggregate array_agg(struct(pre > depth as pin,raise,idx,mark,type,item) order by idx) subs
        group by raise,pre a,depth b
     
-    |> select a,b,subs 
-    |> where a < /*pick*/10 + 1 
+    |> select a,b,subs
+    |> where a < /*pick*/2 + 1 
     |> set a = if(a > b,b,a), b = if(a > b,a,b)
-    |> set subs = array(select as struct slot,* except(slot) from unnest(subs) with offset as slot)
 
-    |> cross join unnest(subs) obj
+    |> cross join unnest(subs) obj with offset as slot 
     |> aggregate min_by(obj,pin) head,max_by(obj,pin) tail group by a,b,slot,raise
     |> select 
-        head.raise,b as depth,slot,head.idx as open,tail.idx + if(head.mark is null,length(head.type).ifnull(0)+length(head.item).ifnull(0)+1,0) as close,
+        head.raise,b as depth,slot,head.idx as open,tail.idx + if(head.mark is null,length(head.item).ifnull(0),0) as close,
         head.mark head,head.type,head.item as data,tail.mark tail,--null as part
+
+    -- |> set data = coalesce(data,substring(str,open,close-open).left(16).concat('...')) -- check if correct
 
     |> as obj
     |> aggregate
         array_agg(if(raise,obj,null) ignore nulls order by obj.open) children,
-        array_agg(if(not raise and type in ("STRUCT","ARRAY"),obj,null) ignore nulls order by obj.open) parents,
-        array_agg(if(not raise and type in ("STRUCT","ARRAY"),obj.close,null) ignore nulls order by obj.open) looks group by depth
-    |> where array_length(children) > 0   
-
-    
+        -- array_agg(if(not raise and type in ("STRUCT","ARRAY"),obj,null) ignore nulls order by obj.open) parents,
+        -- array_agg(if(not raise and type in ("STRUCT","ARRAY"),obj.close,null) ignore nulls order by obj.open) looks 
+      group by depth
     |> select as struct *,
-    --|> order by depth,open
+   
+    |> where array_length(children) > 0   
+    |> select as struct *,
+    --|> order by depth
 
   ) as vals from prep
 
 )
 
-select * -- (key).array_last().children.array_last().data 
+select str,* -- (vals).array_last().children.array_last().data 
   from nest
