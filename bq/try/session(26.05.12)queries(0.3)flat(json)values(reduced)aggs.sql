@@ -1,5 +1,5 @@
--- reduces the amount of aggregations in the scalar nest CTE
--- additionally pre-qualifies data with a quick signature check in json CTE
+-- quite an efficient JSON string extractor
+-- can likely be improved by a well-placed unnest in the nest CTE
 
 create temp function getJsonIndex(str string,rgx string) as (array(
   with init as (
@@ -29,8 +29,6 @@ with test as (
   ])
 ),
 
--- processing gets prohibitively expensive for real data
-
 real as (
  
   select typeof(blob) type,blob,null as sel from (
@@ -42,9 +40,33 @@ real as (
   )
 ),
 
+sigs as (
+
+  -- select farm_fingerprint(safe.format('%t',(blob).array_last()).left(256)) sig,(blob).to_json_string() str from real
+  -- qualify row_number() over() = 1 --any_value(true) over(partition by sig) is not null
+
+  
+  -- select 0 sig,any_value(blob).to_json_string() str
+  --  from real group by blob[0]
+
+  -- various shuffle trigger strategies
+  select 0 sig, (blob).to_json_string() str ,
+  from real -- ,unnest([generate_uuid()]) sig
+  -- qualify row_number() over(partition by generate_uuid()) = 1
+  qualify true = max(true) over()-- force perfect shuffle?
+ 
+  -- qualify max(null) over() is null-- force perfect shuffle?
+  -- qualify true = max(true) over(partition by cast(rand()*1024 as int)) -- force perfect shuffle?
+  -- qualify true = max(true) over(partition by generate_uuid()) -- force perfect shuffle?
+  -- qualify true = max(true) over(partition by true) -- for single node
+  -- where exists (select true)
+  
+
+),
+
 json as (
 
-  select str,(str).replace('\\"','\x05').getJsonIndex(
+  select sig,str,(str).replace('\\"','\x05').getJsonIndex(
   ('('
     ||[
     r'"[^"]*"\s*:\s*(?:"[^"]*"|[\d\.]+|true|false|null|[\[\{])', -- primitive fields + named structures
@@ -56,20 +78,15 @@ json as (
     ].array_to_string('|')
     ||
   ')')
-  ) index from (
-    
-    -- this reliably triggers a shuffle across slots
-    select (blob).to_json_string() str from real
-    qualify row_number() over(partition by farm_fingerprint(safe.format('%t',(blob).array_last()))) = 1
-  
-  )
+  ) index from sigs
 
 ),
 
 nest as (
 
-  select str,array(
+  select sig,str,array(
     from unnest(index) with offset as temp_slot
+   
     |> extend mark in ('{','[') as opener, mark in (']','}') as closer,type in ('ENTRY') as entry
     |> extend sum(case when opener then 1 when closer then -1 else 0 end) over(w1) - 1 as depth
        window w1 as (order by idx rows between unbounded preceding and current row)
@@ -83,13 +100,8 @@ nest as (
     |> where pre < /*pick*/10 + 1 
     |> extend pre > depth as pin
     |> set depth =  if(pre > depth,pre,depth)
-    -- don't need this
-    -- |> aggregate array_agg(struct(pin,idx,mark,type,item,entry,closer) /*order by idx*/) subs
-    --     group by depth --pre a,depth b 
-    --|> cross join unnest(subs) obj with offset as slot 
-
-    -- may need this
-    --|> extend row_number() over(/*partition by depth order by idx*/) slot
+    
+    --|> extend row_number() over(partition by depth order by idx) slot 
     |> extend temp_slot as slot
     |> as obj
     |> aggregate min_by(obj,pin) head,max_by(obj,pin) tail group by depth,slot - if(closer,1,0) as slot -- if(entry,item,type)
@@ -111,10 +123,10 @@ nest as (
    
     |> where array_length(children) > 0   
     |> select as struct array_length(children) len,*,
-    |> select as struct *
+    -- |> select as struct *
     -- |> order by depth
 
-  ) as levels from json 
+  ) as levels from json
 
 )
 
@@ -122,6 +134,9 @@ nest as (
 -- select sig,(levels).array_last().children.array_last().data
 --   from nest
 
-select (levels).array_last().children.array_last().data 
+select sig,(levels).array_last().children.array_last().data.length()
  from nest
 
+--select (blob).to_json_string().length() from (
+--  select any_value(blob) blob from real group by blob[0] -- limit 1
+--)
