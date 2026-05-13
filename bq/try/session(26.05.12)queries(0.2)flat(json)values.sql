@@ -56,7 +56,7 @@ json as (
     ].array_to_string('|')
     ||
   ')')
-  ) val from real -- limit 15 
+  ) val from test -- limit 15 
 
 ),
 
@@ -72,36 +72,39 @@ nest as (
     |> extend if(entry,1,0) as lift
 
     |> select pre,depth,* except(pre,depth)
-    |> cross join unnest(generate_array(0,/*if(pre+1<deepest,1,0)*/1)) raise
-    |> set pre = pre + raise + lift , depth = depth + raise + lift,raise = if(raise = 0,true,false) 
+    |> set pre = pre + lift , depth = depth + lift
 
-  
-    |> aggregate array_agg(struct(pre > depth as pin,raise,idx,mark,type,item,entry) order by idx) subs
-       group by raise,pre a,depth b
+    |> aggregate array_agg(struct(pre > depth as pin,idx,mark,type,item,entry) order by idx) subs
+       group by pre a,depth b
     
     |> select a,b,subs
     |> where a < /*pick*/10 + 1 
     |> set a = if(a > b,b,a), b = if(a > b,a,b)
 
     |> cross join unnest(subs) obj with offset as slot 
-    |> aggregate min_by(obj,pin) head,max_by(obj,pin) tail group by a,b,slot--,raise
+    |> aggregate min_by(obj,pin) head,max_by(obj,pin) tail group by a,b,slot
+
+    |> cross join unnest(generate_array(0,/*if(pre+1<deepest,1,0)*/1)) raise
+    |> set b = b + raise,raise = if(raise = 0,true,false) 
+    
     |> select 
-        head.raise,b as depth,slot,head.idx as open,tail.idx + if(head.entry,length(head.item).ifnull(0),0) as close,
+        raise,b as depth,slot,head.idx as open,tail.idx + if(head.entry,length(head.item).ifnull(0),0) as close,
         head.mark head,head.type,head.item as data,tail.mark tail,--null as part
 
-    -- |> set data = coalesce(data,substring(str,open,close-open).left(16).concat('...')) -- check if correct index
+     |> set data = coalesce(substring(str,open,close-open).left(16).concat('...')) -- check if correct index
 
     |> as obj
     |> aggregate
         array_agg(if(raise,obj,null) ignore nulls order by obj.open) children,
-        -- array_agg(if(not raise and type in ("STRUCT","ARRAY"),obj,null) ignore nulls order by obj.open) parents,
+        array_agg(if(not raise and type in ("ARRAY","OBJECT"),obj,null) ignore nulls order by obj.open) parents,
         -- array_agg(if(not raise and type in ("STRUCT","ARRAY"),obj.close,null) ignore nulls order by obj.open) looks 
       group by depth
-    |> select as struct *,
-  
-   
     |> where array_length(children) > 0   
     |> select as struct array_length(children),*,
+
+  
+   
+    --|> select as struct *,
     |> order by depth
 
   ) as vals from json
