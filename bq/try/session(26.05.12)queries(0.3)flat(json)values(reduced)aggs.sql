@@ -35,7 +35,7 @@ real as (
     select
       hits as blob
     from (
-      select * from `stack-curves.tables.hits` -- limit 512
+      select * from `stack-curves.tables.hits` limit 1
     ) -- get,get.hits hit -- limit 1
   )
 ),
@@ -47,13 +47,12 @@ sigs as (
 
   
   -- select 0 sig,any_value(blob).to_json_string() str
-  --  from real group by blob[0]
+  --   from real group by blob[0]
 
-  -- various shuffle trigger strategies
   select 0 sig, (blob).to_json_string() str ,
-  from real -- ,unnest([generate_uuid()]) sig
+  from test -- ,unnest([generate_uuid()]) sig
   -- qualify row_number() over(partition by generate_uuid()) = 1
-  qualify true = max(true) over()-- force perfect shuffle?
+  -- qualify true = max(true) over()-- force perfect shuffle?
  
   -- qualify max(null) over() is null-- force perfect shuffle?
   -- qualify true = max(true) over(partition by cast(rand()*1024 as int)) -- force perfect shuffle?
@@ -85,7 +84,7 @@ json as (
 nest as (
 
   select sig,str,array(
-    from unnest(index) with offset as temp_slot
+    from unnest(index) -- with offset as temp_slot
    
     |> extend mark in ('{','[') as opener, mark in (']','}') as closer,type in ('ENTRY') as entry
     |> extend sum(case when opener then 1 when closer then -1 else 0 end) over(w1) - 1 as depth
@@ -101,8 +100,8 @@ nest as (
     |> extend pre > depth as pin
     |> set depth =  if(pre > depth,pre,depth)
     
-    --|> extend row_number() over(partition by depth order by idx) slot 
-    |> extend temp_slot as slot
+    |> extend row_number() over(partition by depth order by idx) slot 
+    -- |> extend temp_slot as slot
     |> as obj
     |> aggregate min_by(obj,pin) head,max_by(obj,pin) tail group by depth,slot - if(closer,1,0) as slot -- if(entry,item,type)
 
@@ -117,8 +116,8 @@ nest as (
     |> as obj
     |> aggregate
         array_agg(if(raise,obj,null) ignore nulls /*order by obj.open*/) children,
-        -- array_agg(if(not raise and type in ("ARRAY","OBJECT"),obj,null) ignore nulls order by obj.open) parents,
-        -- array_agg(if(not raise and type in ("STRUCT","ARRAY"),obj.close,null) ignore nulls order by obj.open) looks 
+        array_agg(if(not raise and type in ("ARRAY","OBJECT"),obj,null) ignore nulls order by obj.open) parents,
+        -- array_agg(if(not raise and type in ("ARRAY","OBJECT"),obj.close,null) ignore nulls order by obj.open) looks 
       group by depth
    
     |> where array_length(children) > 0   
@@ -134,7 +133,7 @@ nest as (
 -- select sig,(levels).array_last().children.array_last().data
 --   from nest
 
-select sig,(levels).array_last().children.array_last().data.length()
+select * -- (levels).array_last().children.array_last()--.data.length()
  from nest
 
 --select (blob).to_json_string().length() from (
