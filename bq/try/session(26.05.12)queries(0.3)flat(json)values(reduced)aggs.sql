@@ -59,7 +59,19 @@ sigs as (
   -- qualify true = max(true) over(partition by generate_uuid()) -- force perfect shuffle?
   -- qualify true = max(true) over(partition by true) -- for single node
   -- where exists (select true)
+  -- group by all -- having exists (select 1)
+
+),
+
+fuse as (
+
+  -- various configurations allow you to control parallelisation somewhat
+
+  -- select * from sigs where mod(abs(sig),100) <= 5 -- qualify true = max(true) over()
+  -- union all
+  -- select * from sigs where mod(abs(sig),100) > 5 and exists (select 1) --qualify true = max(true) over()
   
+  select * from sigs
 
 ),
 
