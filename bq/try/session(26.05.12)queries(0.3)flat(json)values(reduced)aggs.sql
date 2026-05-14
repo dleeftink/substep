@@ -61,6 +61,9 @@ sigs as (
   -- where exists (select true)
   -- group by all -- having exists (select 1)
 
+  -- qualify ntile(1) over(partition by sig order by sig) = 1
+  -- qualify lag(1) over(partition by sig order by sig) is null
+
 ),
 
 fuse as (
