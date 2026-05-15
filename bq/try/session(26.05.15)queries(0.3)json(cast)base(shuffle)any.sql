@@ -2,7 +2,7 @@
 -- Includes optional duplicate filtering based on value equality (see safe.format('%t',blob) > etc.)
 -- Decide: pass json as string or json?
 
-create or replace function tmp.getJsonBlobSig1(blob any type,schema string) as ((
+create or replace function tmp.getJsonBlobSig2(blob any type,schema string) as ((
   select as struct schema,(blob).to_json_string() jsn,farm_fingerprint(str) sig,length(str) rel,'any' type 
   from (select safe.format('%t',blob) str)
 ));
@@ -104,7 +104,7 @@ real as (
 
 sigs as (
 
-  select tmp.getJsonBlobSig1(blob,typeof(blob)).*
+  select tmp.getJsonBlobSig2(blob,typeof(blob)).*
   from test
 )
 
