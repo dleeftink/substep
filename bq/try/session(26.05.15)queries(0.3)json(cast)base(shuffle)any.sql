@@ -60,7 +60,7 @@ create or replace function tmp.getJsonObjects2(str string, pick int) as (array(
   |> aggregate
       array_agg(if(raise = 0,obj,null) ignore nulls /*order by obj.open*/) leafs,
       array_agg(if(raise = 1 and not entry,obj,null) ignore nulls order by obj.open) stems,
-      array_agg(if(raise = 2 and not entry,obj,null) ignore nulls order by obj.open) roots,
+      array_agg(if(raise = 2 and type = 'ARRAY',obj,null) ignore nulls order by obj.open) roots,
       -- array_agg(if(not raise and type in ("ARRAY","OBJECT"),obj.close,null) ignore nulls order by obj.open) looks 
     group by depth
   
@@ -108,8 +108,8 @@ real as (
 sigs as (
 
   select tmp.getJsonBlobSig2(blob,typeof(blob)).*
-  from test
+  from test -- limit 2
 )
 
-select *, -- (levels).array_last().children.array_last().data 
-  from tmp.mapJsonObjects1(table sigs,scan=>true,dups=>true)
+select * -- (levels).array_last().leafs.array_last()-- .data 
+  from tmp.mapJsonObjects2(table sigs,scan=>true,dups=>true,deep=>10)
