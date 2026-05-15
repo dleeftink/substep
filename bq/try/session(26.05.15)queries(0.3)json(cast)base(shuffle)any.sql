@@ -23,12 +23,11 @@ create or replace function tmp.getJsonObjectTypes2(fragment string, tail string)
 create or replace function tmp.getJsonObjects2(str string, pick int) as (array(
 
   from unnest(
-    -- make sure escaped string == same length
     (str).replace('\\"','\x05\\').regexp_extract_all(r'("[^"]*"\s*:\s*(?:"[^"]*"|[\d\.]+|true|false|null|[\[\{])|[\[\]\{\}]|\,\s*?)')
   ) AS frag WITH OFFSET AS off
     
   |> extend (SUM(LENGTH(frag)) OVER (ORDER BY off ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) + 1 ).ifnull(0) idx, right(frag,1) tail
-  |> where tail not in (',',' ')
+  |> where tail not in (',',' ',', ')
 
   |> select idx,tmp.getJsonObjectTypes2(frag,tail).*
   |> extend mark in ('{','[') as opener, mark in (']','}') as closer,type in ('ENTRY') as entry
@@ -52,10 +51,11 @@ create or replace function tmp.getJsonObjects2(str string, pick int) as (array(
       raise,depth,slot,head.idx as open,tail.idx + if(head.entry,length(head.item).ifnull(1) - 1 ,0) + 1 as close,
       head.mark head,head.type,head.item as data,tail.mark tail,head.entry 
      
-  |> set data = coalesce(substring(str,open,close-open)/*.left(16).concat('...')*/) -- check if correct index
-  --|> set data = if(entry,parse_json(concat('{',(data).replace('\x05',r'\"'),'}')).to_json_string(),null)  -- optionally parse json ...
+  -- |> set data = coalesce(substring(str,open,close-open)/*.left(16).concat('...')*/) -- check if correct index
+  -- |> set data = if(entry,parse_json(concat('{',(data).replace('\x05',r'\"'),'}')).to_json_string(),null)  -- optionally parse json ...
 
-  --|> extend if(not entry,substring(str,open,1),null) as arr_ctx
+  -- |> extend if(not entry,substring(str,greatest(0,open-1),1),null) as arr_ctx
+
   |> as obj
   |> aggregate
       array_agg(if(raise,obj,null) ignore nulls /*order by obj.open*/) children,
@@ -63,6 +63,7 @@ create or replace function tmp.getJsonObjects2(str string, pick int) as (array(
       -- array_agg(if(not raise and type in ("ARRAY","OBJECT"),obj.close,null) ignore nulls order by obj.open) looks 
     group by depth
   
+  |> where array_length(children) > 0
   |> select as struct *
 
 ));
