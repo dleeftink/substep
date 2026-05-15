@@ -7,7 +7,7 @@ create or replace function tmp.getJsonBlobSig1(blob any type,schema string) as (
   from (select safe.format('%t',blob) str)
 ));
 
-create or replace function tmp.getJsonObjectsFromJson1(str string) as (array(
+create or replace function tmp.getJsonObjects2(str string) as (array(
 
   from unnest(
     (str).replace('\\"','\x05').regexp_extract_all(r'("[^"]*"\s*:\s*(?:"[^"]*"|[\d\.]+|true|false|null|[\[\{])|[\[\]\{\}\, ])')
@@ -39,15 +39,14 @@ create or replace function tmp.getJsonObjectsFromJson1(str string) as (array(
   |> extend row_number() over(partition by depth order by idx) slot |> as obj
   |> aggregate min_by(obj,pin) head,max_by(obj,pin) tail group by depth,slot - if(closer,1,0) as slot -- if(entry,item,type) 
 
-  |> cross join unnest(generate_array(0,1)) raise
-  |> where not (raise = 1 and head.entry)
-    
+  |> cross join unnest(generate_array(0,(head.entry).if(0,1))) raise
   |> set depth = depth + raise,raise = if(raise = 0,true,false) 
   |> select 
       raise,depth,slot,head.idx as open,tail.idx + if(head.entry,length(head.item).ifnull(1)-1,0) + 1 as close,
       head.mark head,head.type,head.item as data,tail.mark tail,head.entry 
      
-  -- |> set data = if(entry,parse_json(concat('{',(data).replace('\x05',r'\"'),'}')),null) --coalesce(substring(str,open,close-open).left(16).concat('...')) -- check if correct index
+  --|> set data = coalesce(substring(str,open,close-open).left(16).concat('...')) -- check if correct index
+  |> set data = if(entry,parse_json(concat('{',(data).replace('\x05',r'\"'),'}')).to_json_string(),null)  -- optionally parse json ...
 
   |> as obj
   |> aggregate
@@ -56,13 +55,12 @@ create or replace function tmp.getJsonObjectsFromJson1(str string) as (array(
       -- array_agg(if(not raise and type in ("ARRAY","OBJECT"),obj.close,null) ignore nulls order by obj.open) looks 
     group by depth
   
-  |> where array_length(children) > 0   
+  -- |> where array_length(children) > 0   
   |> select as struct array_length(children) len,*
 
 ));
 
-
-create or replace table function tmp.mapJsonObjects1(input table< /*schema string,*/jsn string,sig int /*,rel int,type string*/>, scan bool, dups bool) as (
+create or replace table function tmp.mapJsonObjects2(input table< /*schema string,*/jsn string,sig int /*,rel int,type string*/>, scan bool, dups bool) as (
   
   with shuf as (
     
@@ -71,7 +69,7 @@ create or replace table function tmp.mapJsonObjects1(input table< /*schema strin
 
   )
 
-  select tmp.getJsonObjectsFromJson1(str) levels from shuf
+  select tmp.getJsonObjects1(str) levels from shuf
 
 );
 
@@ -101,7 +99,8 @@ real as (
 sigs as (
 
   select tmp.getJsonBlobSig1(blob,typeof(blob)).*
-  from real
+  from test
 )
 
-select (levels).array_last().children.array_last().data from tmp.mapJsonObjects1(table sigs,scan=>true,dups=>true)
+select *, -- (levels).array_last().children.array_last().data 
+  from tmp.mapJsonObjects1(table sigs,scan=>true,dups=>true)
