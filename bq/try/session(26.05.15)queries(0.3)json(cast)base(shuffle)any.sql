@@ -45,8 +45,8 @@ create or replace function tmp.getJsonObjects2(str string, pick int) as (array(
   |> extend row_number() over(partition by depth order by idx) slot |> as obj
   |> aggregate min_by(obj,pin) head,max_by(obj,pin) tail group by depth,slot - if(closer,1,0) as slot -- if(entry,item,type) 
 
-  |> cross join unnest(generate_array(0,(head.entry or depth >= pick).if(0,1))) raise
-  |> set depth = depth + raise,raise = if(raise = 0,true,false) 
+  |> cross join unnest(generate_array(0,(head.entry or depth >= pick).if(0,2))) raise
+  |> set depth = depth + raise --,raise = if(raise = 0,true,false) 
   |> select 
       raise,depth,slot,head.idx as open,tail.idx + if(head.entry,length(head.item).ifnull(1) - 1 ,0) + 1 as close,
       head.mark head,head.type,head.item as data,tail.mark tail,head.entry 
@@ -58,13 +58,14 @@ create or replace function tmp.getJsonObjects2(str string, pick int) as (array(
 
   |> as obj
   |> aggregate
-      array_agg(if(raise,obj,null) ignore nulls /*order by obj.open*/) children,
-      array_agg(if(not raise and not entry,obj,null) ignore nulls order by obj.open) parents,
+      array_agg(if(raise = 0,obj,null) ignore nulls /*order by obj.open*/) leafs,
+      array_agg(if(raise = 1 and not entry,obj,null) ignore nulls order by obj.open) stems,
+      array_agg(if(raise = 2 and not entry,obj,null) ignore nulls order by obj.open) roots,
       -- array_agg(if(not raise and type in ("ARRAY","OBJECT"),obj.close,null) ignore nulls order by obj.open) looks 
     group by depth
   
-  |> where array_length(children) > 0
-  |> select as struct *
+  |> where array_length(leafs) > 0
+  |> select as struct depth,leafs,depth depth_2, stems,depth depth_3,roots
 
 ));
 
