@@ -1,8 +1,9 @@
 -- Generally most performant when passing the blob directly
 -- Includes optional duplicate filtering based on value equality (see safe.format('%t',blob) > etc.)
+-- Decide: pass json as string or json?
 
 create or replace function tmp.getJsonBlobSig1(blob any type,schema string) as ((
-  select as struct schema,(blob).to_json() jsn,farm_fingerprint(str) sig,length(str) rel,'any' type 
+  select as struct schema,(blob).to_json_string() jsn,farm_fingerprint(str) sig,length(str) rel,'any' type 
   from (select safe.format('%t',blob) str)
 ));
 
@@ -16,11 +17,11 @@ create or replace function tmp.getJsonObjectsFromJson1(str string) as (array(
   |> where tail not in (',',' ')
 
   |> select idx,(
-     case
-     when tail in ('[',']') then struct(tail as mark,'ARRAY' as type,(sub).rtrim(':[').replace('""','"undefined"') as item)
-     when tail in ('{','}') then struct(tail as mark,'OBJECT' as type,(sub).rtrim(':{') as item)
-     else struct(':' as mark, 'ENTRY' as type,sub as item)
-     end
+    case
+    when tail in ('[',']') then struct(tail as mark,'ARRAY' as type,(sub).rtrim(':[').replace('""','"undefined"') as item)
+    when tail in ('{','}') then struct(tail as mark,'OBJECT' as type,(sub).rtrim(':{') as item)
+    else struct(':' as mark, 'ENTRY' as type,sub as item)
+    end
   ).* 
 
   |> extend mark in ('{','[') as opener, mark in (']','}') as closer,type in ('ENTRY') as entry
@@ -61,11 +62,11 @@ create or replace function tmp.getJsonObjectsFromJson1(str string) as (array(
 ));
 
 
-create or replace table function tmp.mapJsonObjects1(input table< /*schema string,*/jsn json,sig int /*,rel int,type string*/>, scan bool, dups bool) as (
+create or replace table function tmp.mapJsonObjects1(input table< /*schema string,*/jsn string,sig int /*,rel int,type string*/>, scan bool, dups bool) as (
   
   with shuf as (
     
-    select (jsn).to_json_string() str from input 
+    select (jsn)/*.to_json_string()*/ str from input 
     qualify if(not scan,true,if(dups,true = max(true) over(),row_number() over(partition by sig) = 1))
 
   )
@@ -103,4 +104,4 @@ sigs as (
   from real
 )
 
-select (levels).array_last().children.array_last() from tmp.mapJsonObjects1(table sigs,scan=>true,dups=>true)
+select (levels).array_last().children.array_last().data from tmp.mapJsonObjects1(table sigs,scan=>true,dups=>true)
