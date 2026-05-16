@@ -20,31 +20,39 @@ create or replace function tmp.getJsonObjectTypes2(fragment string, tail string)
   end
 ); 
 
-create or replace function tmp.mapJsonObjectLinks3 (source any type,target any type, step int) as (array(
+create or replace function tmp.getJsonObjectLinkerBinsSize (source any type, strength float64) as (
+  GREATEST(1, CAST((source.closes - source.opens) / pow(source.size,strength) AS INT64))
+);
+
+create or replace function tmp.mapJsonObjectLinksTo (source any type,target any type, strength float64) as ((
   
   /*with init as (
     
-    select GREATEST(1, CAST(((source).closes - (source).opens) / pow((source).size,0.5) AS INT64)) as step limit 1
+    select tmp.getJsonObjectLinkerBinsSize(source) as step
+      -- GREATEST(1, CAST(((source).closes - (source).opens) / pow((source).size,0.5) AS INT64)) as step limit 1
   
   )*/
-  select as struct 
-    tgt.type parent,tgt.data parname,tgt.slot parenth,if(src.entry,src.data,src.type) view,src.slot from unnest(source) src --,init
-  -- CROSS JOIN UNNEST(target) tgt WHERE src.close between tgt.open and tgt.close
-  left JOIN ((
-    select as struct tgt.*, i * step as bid,
-    from unnest(target) tgt,--init,
-    unnest(GENERATE_ARRAY(
-        DIV(tgt.open, step),
-        DIV(tgt.close, step)
-      )) as i
-    )) tgt 
-  on DIV(src.open, step) * step = bid
-  and 
-  (src.open between tgt.open and tgt.close)
-  -- range_contains(tgt.line,src.line)
-  -- (src.open < tgt.close)
+  select array(
+    select as struct 
+      tgt.type parent,tgt.data parname,tgt.slot parenth,if(src.entry,src.data,src.type) view,src.slot from unnest(source.nodes) src -- ,init
+    -- CROSS JOIN UNNEST(target) tgt WHERE src.close between tgt.open and tgt.close
+    left JOIN ((
+      select as struct tgt.*, i * step as bid,
+      from unnest(target.nodes) tgt,--init,
+      unnest(GENERATE_ARRAY(
+          DIV(tgt.open, step),
+          DIV(tgt.close, step)
+        )) as i
+      )) tgt 
+    on DIV(src.open, step) * step = bid
+    and 
+    (src.open between tgt.open and tgt.close)
+    -- range_contains(tgt.line,src.line)
+    -- (src.open < tgt.close)
+  ) from (
+    select tmp.getJsonObjectLinkerBinsSize(source,strength) as step
   )
-);
+));
 
 create or replace function tmp.getJsonObjects2(str string, pick int) as (array(
 
@@ -114,9 +122,9 @@ create or replace function tmp.getJsonObjects2(str string, pick int) as (array(
     group by depth
   
   |> where array_length(leaf.nodes) > 0
-  |> set 
-      leaf = (select leaf.* |> set bins = GREATEST(1, CAST((closes - opens) / pow(size,0.5) AS INT64)) |> select as struct *),
-      stem = (select stem.* |> set bins = GREATEST(1, CAST((closes - opens) / pow(size,0.5) AS INT64)) |> select as struct *)
+  -- |> set 
+  --     leaf = (select leaf.* |> set bins = GREATEST(1, CAST((closes - opens) / pow(size,0.5) AS INT64)) |> select as struct *),
+  --     stem = (select stem.* |> set bins = GREATEST(1, CAST((closes - opens) / pow(size,0.5) AS INT64)) |> select as struct *)
   
   |> select as struct depth,leaf,depth depth_2,stem,depth depth_3,root --,bin
 
@@ -169,10 +177,10 @@ select  -- (levels).array_last().leafs.array_last()-- .data
     select as struct  depth,leafs[safe_offset(array_length(leafs)-1)].view a,stems[safe_offset(array_length(stems)-1)].view b 
     from (
       select depth,
-        tmp.mapJsonObjectLinks3(leaf.nodes,stem.nodes,leaf.bins) as leafs,
-        tmp.mapJsonObjectLinks3(stem.nodes,root.nodes,stem.bins) as stems
+        (leaf).(tmp.mapJsonObjectLinksTo)(stem,0.25+rand()/2) as leafs,
+        (stem).(tmp.mapJsonObjectLinksTo)(root,0.25+rand()/2) as stems
       from unnest(levels) level -- limit 1 offset 1
     )
 
   ).array_last() 
-  as levels from tmp.mapJsonObjects2(table sigs,scan=>true,dups=>true,deep=>8)
+  as levels from tmp.mapJsonObjects2(table sigs,scan=>true,dups=>true,deep=>10)
