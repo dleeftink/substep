@@ -57,10 +57,14 @@ create or replace function tmp.getJsonObjects2(str string, pick int) as (array(
 
   -- |> extend if(not entry,substring(str,greatest(0,open-1),1),null) as arr_ctx
 
+  |> extend range(timestamp_seconds(open),timestamp_seconds(close)) line 
+  
   |> as obj
   |> extend raise = 2 and type = 'ARRAY' as is_root,raise = 1 and not entry as is_stem,raise = 0 as is_leaf
   |> aggregate
-
+      min(if(is_leaf,open,null)) opens,
+      max(if(is_leaf,close,null)) closes,
+      countif(is_leaf) size,
       struct(
         array_agg(if(is_leaf,obj,null) ignore nulls /*order by obj.open*/) as nodes
       ) as leaf ,
@@ -78,7 +82,7 @@ create or replace function tmp.getJsonObjects2(str string, pick int) as (array(
     group by depth
   
   |> where array_length(leaf.nodes) > 0
-  |> select as struct depth,leaf,depth depth_2, stem,depth depth_3,root
+  |> select as struct opens,closes,size,depth,leaf,depth depth_2, stem,depth depth_3,root
 
 ));
 
