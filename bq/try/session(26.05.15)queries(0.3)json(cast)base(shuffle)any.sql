@@ -42,7 +42,8 @@ create or replace function tmp.getJsonObjects2(str string, pick int) as (array(
   |> extend pre > depth as pin
   |> set depth = if(pin,pre,depth)
     
-  |> extend row_number() over(partition by depth order by idx) slot |> as obj
+  |> extend row_number() over(partition by depth order by idx) slot 
+  |> as obj
   |> aggregate min_by(obj,pin) head,max_by(obj,pin) tail group by depth,slot - if(closer,1,0) as slot -- if(entry,item,type) 
 
   |> cross join unnest(generate_array(0,(head.entry or depth >= pick).if(0,2))) raise
@@ -57,15 +58,27 @@ create or replace function tmp.getJsonObjects2(str string, pick int) as (array(
   -- |> extend if(not entry,substring(str,greatest(0,open-1),1),null) as arr_ctx
 
   |> as obj
+  |> extend raise = 2 and type = 'ARRAY' as is_root,raise = 1 and not entry as is_stem,raise = 0 as is_leaf
   |> aggregate
-      array_agg(if(raise = 0,obj,null) ignore nulls /*order by obj.open*/) leafs,
-      array_agg(if(raise = 1 and not entry,obj,null) ignore nulls order by obj.open) stems,
-      array_agg(if(raise = 2 and type = 'ARRAY',obj,null) ignore nulls order by obj.open) roots,
+
+      struct(
+        array_agg(if(is_leaf,obj,null) ignore nulls /*order by obj.open*/) as nodes
+      ) as leaf ,
+
+      struct(
+        array_agg(if(is_stem,obj,null) ignore nulls order by obj.open) as nodes,
+        array_agg(if(is_stem,obj.close,null) ignore nulls order by obj.open) as index
+      ) stem,
+
+      struct(
+        array_agg(if(is_root,obj,null) ignore nulls order by obj.open) as nodes,
+        array_agg(if(is_root,obj.close,null) ignore nulls order by obj.open) as index
+      ) as root, -- acres
       -- array_agg(if(not raise and type in ("ARRAY","OBJECT"),obj.close,null) ignore nulls order by obj.open) looks 
     group by depth
   
-  |> where array_length(leafs) > 0
-  |> select as struct depth,leafs,depth depth_2, stems,depth depth_3,roots
+  |> where array_length(leaf.nodes) > 0
+  |> select as struct depth,leaf,depth depth_2, stem,depth depth_3,root
 
 ));
 
