@@ -118,7 +118,7 @@ create or replace function tmp.getJsonObjects2(str string, pick int) as (array(
         array_agg(if(is_root,obj,null) ignore nulls order by obj.open) as nodes,
         array_agg(if(is_root,obj.close,null) ignore nulls /*order by obj.open*/) as index
       ) as root, -- acres
-      -- array_agg(if(not raise and type in ("ARRAY","OBJECT"),obj.close,null) ignore nulls order by obj.open) looks 
+
     group by depth
   
   |> where array_length(leaf.nodes) > 0
@@ -177,8 +177,8 @@ select  -- (levels).array_last().leafs.array_last()-- .data
     select as struct  depth,leafs[safe_offset(array_length(leafs)-1)].view a,stems[safe_offset(array_length(stems)-1)].view b 
     from (
       select depth,
-        (leaf).(tmp.mapJsonObjectLinksTo)(stem,0.25+rand()/2) as leafs,
-        (stem).(tmp.mapJsonObjectLinksTo)(root,0.25+rand()/2) as stems
+        (leaf).(tmp.mapJsonObjectLinksTo)(stem,/*0.5 + 0.25 * (1.0 - (1.0 / SQRT(1+leaf.size))*/ greatest(0.25,1.0 - (1.0 / SQRT(1+leaf.size)))) as leafs,
+        (stem).(tmp.mapJsonObjectLinksTo)(root,/*0.5 + 0.25 * (1.0 - (1.0 / SQRT(1+stem.size))*/ greatest(0.25,1.0 - (1.0 / SQRT(1+stem.size)))) as stems
       from unnest(levels) level -- limit 1 offset 1
     )
 
