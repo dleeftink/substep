@@ -34,9 +34,10 @@ create or replace function tmp.mapJsonObjectLinksTo (source any type,target any 
   )*/
   select array(
     select as struct 
-      tgt.type parent,tgt.data parname,tgt.slot parenth,if(src.entry,src.data,src.type) view,src.slot from unnest(source.nodes) src -- ,init
+      tgt.type parent,tgt.data parname,tgt.slot parenth,if(src.entry,src.data,src.type) view,src.slot 
+      from unnest(source.nodes) src -- ,init
     -- CROSS JOIN UNNEST(target) tgt WHERE src.close between tgt.open and tgt.close
-    left JOIN ((
+    JOIN ((
       select as struct tgt.*, i * step as bid,
       from unnest(target.nodes) tgt,--init,
       unnest(GENERATE_ARRAY(
