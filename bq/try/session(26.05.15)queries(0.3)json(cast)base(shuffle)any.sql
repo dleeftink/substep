@@ -20,14 +20,20 @@ create or replace function tmp.getJsonObjectTypes2(fragment string, tail string)
   end
 ); 
 
-create or replace function tmp.mapJsonObjectLinks2 (source any type,target any type,step int) as (array(
-   
+create or replace function tmp.mapJsonObjectLinks3 (source any type,target any type, step int) as (array(
+  
+  /*with init as (
+    
+    select GREATEST(1, CAST(((source).closes - (source).opens) / pow((source).size,0.5) AS INT64)) as step limit 1
+  
+  )*/
   select as struct 
-    tgt.type parent,tgt.data parname,tgt.slot parenth,if(src.entry,src.data,src.type) view,src.slot from unnest(source) src
+    tgt.type parent,tgt.data parname,tgt.slot parenth,if(src.entry,src.data,src.type) view,src.slot from unnest(source) src --,init
   -- CROSS JOIN UNNEST(target) tgt WHERE src.close between tgt.open and tgt.close
   left JOIN ((
     select as struct tgt.*, i * step as bid,
-    from unnest(target) tgt,unnest(GENERATE_ARRAY(
+    from unnest(target) tgt,--init,
+    unnest(GENERATE_ARRAY(
         DIV(tgt.open, step),
         DIV(tgt.close, step)
       )) as i
@@ -37,8 +43,8 @@ create or replace function tmp.mapJsonObjectLinks2 (source any type,target any t
   (src.open between tgt.open and tgt.close)
   -- range_contains(tgt.line,src.line)
   -- (src.open < tgt.close)
-
-));
+  )
+);
 
 create or replace function tmp.getJsonObjects2(str string, pick int) as (array(
 
@@ -87,30 +93,32 @@ create or replace function tmp.getJsonObjects2(str string, pick int) as (array(
         min(if(is_leaf,open,null)) as opens,
         max(if(is_leaf,close,null)) as closes,
         array_agg(if(is_leaf,obj,null) ignore nulls /*order by obj.open*/) as nodes,
-        countif(is_leaf) as size
+        countif(is_leaf) as size,
+        null as bins
       ) as leaf ,
 
       struct(
         min(if(is_stem,open,null)) as opens,
         max(if(is_stem,close,null)) as closes,
         array_agg(if(is_stem,obj,null) ignore nulls order by obj.open) as nodes,
-        array_agg(if(is_stem,obj.close,null) ignore nulls order by obj.open) as index,
-        countif(is_stem) as size
+        array_agg(if(is_stem,obj.close,null) ignore nulls /*order by obj.open*/) as index,
+        countif(is_stem) as size,
+        null as bins
       ) stem,
 
       struct(
         array_agg(if(is_root,obj,null) ignore nulls order by obj.open) as nodes,
-        array_agg(if(is_root,obj.close,null) ignore nulls order by obj.open) as index
+        array_agg(if(is_root,obj.close,null) ignore nulls /*order by obj.open*/) as index
       ) as root, -- acres
       -- array_agg(if(not raise and type in ("ARRAY","OBJECT"),obj.close,null) ignore nulls order by obj.open) looks 
     group by depth
   
   |> where array_length(leaf.nodes) > 0
-  |> extend struct(
-      GREATEST(1, CAST((leaf.closes - leaf.opens) / pow(leaf.size,0.5) AS INT64)) as leafs,
-      GREATEST(1, CAST((stem.closes - stem.opens) / pow(stem.size,0.5) AS INT64)) as stems
-    ) as bin
-  |> select as struct depth,leaf,depth depth_2, stem,depth depth_3,root,bin
+  |> set 
+      leaf = (select leaf.* |> set bins = GREATEST(1, CAST((closes - opens) / pow(size,0.5) AS INT64)) |> select as struct *),
+      stem = (select stem.* |> set bins = GREATEST(1, CAST((closes - opens) / pow(size,0.5) AS INT64)) |> select as struct *)
+  
+  |> select as struct depth,leaf,depth depth_2,stem,depth depth_3,root --,bin
 
 ));
 
