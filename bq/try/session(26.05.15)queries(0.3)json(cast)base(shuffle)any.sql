@@ -164,5 +164,15 @@ sigs as (
   from test -- limit 2
 )
 
-select * -- (levels).array_last().leafs.array_last()-- .data 
-  from tmp.mapJsonObjects2(table sigs,scan=>true,dups=>true,deep=>10)
+select  -- (levels).array_last().leafs.array_last()-- .data 
+  array(
+    select as struct  depth,leafs[safe_offset(array_length(leafs)-1)].view a,stems[safe_offset(array_length(stems)-1)].view b 
+    from (
+      select depth,
+        tmp.mapJsonObjectLinks3(leaf.nodes,stem.nodes,leaf.bins) as leafs,
+        tmp.mapJsonObjectLinks3(stem.nodes,root.nodes,stem.bins) as stems
+      from unnest(levels) level -- limit 1 offset 1
+    )
+
+  ).array_last() 
+  as levels from tmp.mapJsonObjects2(table sigs,scan=>true,dups=>true,deep=>8)
