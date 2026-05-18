@@ -3,7 +3,7 @@
 -- Decide: pass json as string or json?
 
 create or replace function tmp.getJsonObjectSignature(blob any type,schema string) as ((
-  select as struct schema,(blob).to_json_string() jsn,farm_fingerprint(str) sig,length(str) rel,'any' type 
+  select as struct schema,(blob).to_json_string() str,farm_fingerprint(str) sig,length(str) rel,'any' type 
   from (select safe.format('%t',blob) str)
 ));
 
@@ -48,7 +48,7 @@ create or replace function tmp.getParentageFrom(source any type,target any type,
     from unnest(source) src -- ,init
   -- CROSS JOIN UNNEST(target) tgt WHERE src.close between tgt.open and tgt.close
   JOIN ((
-    select as struct tgt.*, i * step as bid,
+    select as struct tgt.*, i * step as bid,max(i) over() buckets
     from unnest(target) tgt,--init,
     unnest(GENERATE_ARRAY(
         DIV(tgt.open, step),
@@ -57,14 +57,14 @@ create or replace function tmp.getParentageFrom(source any type,target any type,
     )) tgt 
   on DIV(src.open, step) * step = bid
   and 
-  (src.open between tgt.open and tgt.close)
+    (src.open between tgt.open and tgt.close)
   -- range_contains(tgt.line,src.line)
   -- (src.open < tgt.close)
 
 ));
 
 create or replace function tmp.getJsonAncestors(source any type,target any type) as (
-  (source.nodes).(tmp.getParentageFrom)(target.nodes,tmp.getSearchStepSize(target,greatest(0.25,1.0 - (1.0 / SQRT(1+source.size))))
+  (source.nodes).(tmp.getParentageFrom)(target.nodes,tmp.getSearchStepSize(target,greatest(0.25,1.0 - (1.0 / SQRT(1+target.size))))
 ));
 
 create or replace function tmp.getJsonObjects2(str string, pick int) as (array(
@@ -128,8 +128,11 @@ create or replace function tmp.getJsonObjects2(str string, pick int) as (array(
       ) stem,
 
       struct(
+        min(if(is_root,open,null)) as opens,
+        max(if(is_root,close,null)) as closes,
         array_agg(if(is_root,obj,null) ignore nulls order by obj.open) as nodes,
-        array_agg(if(is_root,obj.close,null) ignore nulls /*order by obj.open*/) as index
+        array_agg(if(is_root,obj.close,null) ignore nulls /*order by obj.open*/) as index,
+        countif(is_root) as size
       ) as root, -- acres
 
     group by depth
@@ -143,11 +146,11 @@ create or replace function tmp.getJsonObjects2(str string, pick int) as (array(
 
 ));
 
-create or replace table function tmp.mapJsonObjects2(input table< /*schema string,*/jsn string,sig int /*,rel int,type string*/>, scan bool, dups bool,deep int) as (
+create or replace table function tmp.mapJsonObjects2(input table< /*schema string,*/str string,sig int /*,rel int,type string*/>, scan bool, dups bool,deep int) as (
   
   with shuf as (
     
-    select (jsn)/*.to_json_string()*/ str from input 
+    select (str)/*.to_json_string()*/ str from input 
     qualify if(not scan,true,if(dups,true = max(true) over(),row_number() over(partition by sig) = 1))
 
   )
@@ -182,12 +185,14 @@ real as (
 sigs as (
 
   select tmp.getJsonObjectSignature(blob,typeof(blob)).*
-  from test -- limit 2
+  from real limit 1
 )
 
 select  -- (levels).array_last().leafs.array_last()-- .data 
   array(
-    select as struct depth,leafs[safe_offset(array_length(leafs)-1)].source.data a,stems[safe_offset(array_length(stems)-1)].target.data b 
+    select as struct depth,--leafs[safe_offset(array_length(leafs)-1)].source.data a,stems[safe_offset(array_length(stems)-1)].target.data b, 
+      leafs[safe_offset(array_length(leafs)-1)].target.buckets leaf_buckets,
+      stems[safe_offset(array_length(leafs)-1)].target.buckets stem_buckets
     from (
       select depth,
         (leaf).(tmp.getJsonAncestors)(stem) as leafs,
@@ -195,5 +200,5 @@ select  -- (levels).array_last().leafs.array_last()-- .data
       from unnest(levels) level -- limit 1 offset 1
     )
 
-  ).array_last() 
+  )--.array_last() 
   as levels from tmp.mapJsonObjects2(table sigs,scan=>true,dups=>true,deep=>10)
