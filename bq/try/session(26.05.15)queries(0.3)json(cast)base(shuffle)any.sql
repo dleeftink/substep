@@ -41,13 +41,14 @@ create or replace function tmp.getParentageFrom(source any type,target any type,
 
   select as struct 
     src source,tgt target
+    --(select as struct src.* replace(off+1 as slot)) source,tgt target
     --tgt.type parent,/*tgt.data parname,*/tgt.slot parenth,if(src.entry,src.data,src.type) view,src.slot,
     --tgt.buckets 
-    from unnest(source) src -- ,init
+    from unnest(source) src -- with offset off-- ,init
   -- CROSS JOIN UNNEST(target) tgt WHERE src.close between tgt.open and tgt.close
   JOIN ((
-    select as struct tgt.*, i * step as bid,max(i) over() buckets
-    from unnest(target) tgt,--init,
+    select as struct tgt.* /*replace(off+1 as slot)*/, i * step as bid,max(i) over() buckets
+    from unnest(target) tgt,-- with offset off,
     unnest(GENERATE_ARRAY(
         DIV(tgt.open, step),
         DIV(tgt.close, step)
@@ -56,6 +57,7 @@ create or replace function tmp.getParentageFrom(source any type,target any type,
   on DIV(src.open, step) * step = bid
   and 
     (src.open between tgt.open and tgt.close)
+    
   -- range_contains(tgt.line,src.line)
   -- (src.open < tgt.close)
 
@@ -66,7 +68,7 @@ create or replace function tmp.getSearchStepSize(source any type, strength float
 );
 
 create or replace function tmp.getJsonAncestors(source any type,target any type) as (
-  (source.nodes).(tmp.getParentageFrom)(target.nodes,tmp.getSearchStepSize(target,(1.0 - (1.0 / SQRT(1+target.size))).greatest(0.25).least(1))
+  (source.nodes).(tmp.getParentageFrom)(target.nodes,tmp.getSearchStepSize(target,(1.0 - (1.0 / SQRT(1+target.size))).greatest(0.25).least(0.75))
 ));
 
 create or replace aggregate function tmp.getJsonObjectNodes(pick bool,obj struct<
@@ -102,14 +104,15 @@ create or replace function tmp.getJsonObjects2(str string, pick int) as (array(
   |> where pre < pick 
 
   |> extend pre > depth as pin
-  |> extend row_number() over(partition by pre-lift,depth order by idx) slot 
   |> set depth = if(pin,pre,depth) 
-  
+  |> extend row_number() over(partition by depth order by idx) slot 
   |> as obj
-  |> aggregate min_by(obj,pin) head,max_by(obj,pin) tail group by depth, slot -- slot - if(closer,1,0) as slot -- if(entry,item,type) 
+
+  |> aggregate min_by(obj,pin) head,max_by(obj,pin) tail group by depth , slot - if(closer,1,0) as slot -- if(entry,item,type) 
+  |> set slot = row_number() over(partition by depth order by slot)
 
   |> cross join unnest(generate_array(0,(head.entry or depth >= pick).if(0,2))) raise
-  |> set depth = depth + raise --,raise = if(raise = 0,true,false) 
+  |> set depth = depth + raise
   |> select 
       raise,depth,slot,head.idx as open,tail.idx + if(head.entry,length(head.item).ifnull(1) - 1 ,0) + 1 as close,
       head.mark head,head.type,head.item as data,tail.mark tail,head.entry 
@@ -143,12 +146,12 @@ create or replace table function tmp.mapJsonObjects2(input table< /*schema strin
   
   with shuf as (
     
-    select (str)/*.to_json_string()*/ str from input 
+    select sig,(str)/*.to_json_string()*/ str from input 
     qualify if(not scan,true,if(dups,true = max(true) over(),row_number() over(partition by sig) = 1))
 
   )
 
-  select tmp.getJsonObjects2(str,deep) levels from shuf
+  select sig,tmp.getJsonObjects2(str,deep) levels from shuf
 
 );
 
@@ -185,7 +188,7 @@ exit as (
 
   select  -- (levels).array_last().leafs.array_last()-- .data 
     array(
-      select as struct depth,leafs[safe_offset(array_length(leafs)-1)].source.data a,stems[safe_offset(array_length(stems)-1)].target.data b, 
+      select as struct *, -- depth,leafs[safe_offset(array_length(leafs)-1)].source.data a,stems[safe_offset(array_length(stems)-1)].target.data b, 
         leafs[safe_offset(array_length(leafs)-1)].target.buckets leaf_buckets,
         stems[safe_offset(array_length(stems)-1)].target.buckets stem_buckets
       from (
