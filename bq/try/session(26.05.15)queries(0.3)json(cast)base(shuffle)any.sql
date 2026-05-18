@@ -64,7 +64,7 @@ create or replace function tmp.getParentageFrom(source any type,target any type,
 ));
 
 create or replace function tmp.getJsonAncestors(source any type,target any type) as (
-  (source.nodes).(tmp.getParentageFrom)(target.nodes,tmp.getSearchStepSize(source,greatest(0.25,1.0 - (1.0 / SQRT(1+source.size))))
+  (source.nodes).(tmp.getParentageFrom)(target.nodes,tmp.getSearchStepSize(target,greatest(0.25,1.0 - (1.0 / SQRT(1+source.size))))
 ));
 
 create or replace function tmp.getJsonObjects2(str string, pick int) as (array(
