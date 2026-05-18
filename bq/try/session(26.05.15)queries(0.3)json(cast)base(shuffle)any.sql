@@ -40,7 +40,9 @@ create or replace function tmp.getJsonObjectMarks(fragment string, tail string) 
 create or replace function tmp.getParentageFrom(source any type,target any type, step int) as (array(
 
   select as struct 
-    src as source,tgt as target, --tgt.type parent,tgt.data parname,tgt.slot parenth,if(src.entry,src.data,src.type) view,src.slot 
+    src source,tgt target
+    --tgt.type parent,/*tgt.data parname,*/tgt.slot parenth,if(src.entry,src.data,src.type) view,src.slot,
+    --tgt.buckets 
     from unnest(source) src -- ,init
   -- CROSS JOIN UNNEST(target) tgt WHERE src.close between tgt.open and tgt.close
   JOIN ((
@@ -100,9 +102,9 @@ create or replace function tmp.getJsonObjects2(str string, pick int) as (array(
   |> where pre < pick 
 
   |> extend pre > depth as pin
-  |> set depth = if(pin,pre,depth)
-    
-  |> extend row_number() over(partition by pre,depth order by idx) slot 
+  |> extend row_number() over(partition by pre-lift,depth order by idx) slot 
+  |> set depth = if(pin,pre,depth) 
+  
   |> as obj
   |> aggregate min_by(obj,pin) head,max_by(obj,pin) tail group by depth, slot -- slot - if(closer,1,0) as slot -- if(entry,item,type) 
 
@@ -183,7 +185,7 @@ exit as (
 
   select  -- (levels).array_last().leafs.array_last()-- .data 
     array(
-      select as struct *, --depth,--leafs[safe_offset(array_length(leafs)-1)].source.data a,stems[safe_offset(array_length(stems)-1)].target.data b, 
+      select as struct depth,leafs[safe_offset(array_length(leafs)-1)].source.data a,stems[safe_offset(array_length(stems)-1)].target.data b, 
         leafs[safe_offset(array_length(leafs)-1)].target.buckets leaf_buckets,
         stems[safe_offset(array_length(stems)-1)].target.buckets stem_buckets
       from (
