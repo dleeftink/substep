@@ -128,8 +128,8 @@ create or replace function tmp.getJsonObjects2(str string, pick int) as (array(
   |> aggregate
 
       tmp.getJsonObjectNodes(is_leaf,obj) as leaf,
-      tmp.getJsonObjectNodes(is_stem,obj) as stem,
-      tmp.getJsonObjectNodes(is_root,obj) as root,
+      tmp.getJsonObjectNodes(is_stem or depth = 0,obj) as stem, -- always include top-level objects so we don't end up with an empty inner join later
+      tmp.getJsonObjectNodes(is_root /*or depth = 1 */,obj) as root,
 
     group by depth
   
