@@ -176,7 +176,7 @@ real as (
 sigs as (
 
   select tmp.getJsonObjectSignature(blob,typeof(blob)).*
-  from real limit 1
+  from test limit 1
 ),
 
 exit as (
@@ -197,4 +197,6 @@ exit as (
     as levels from tmp.mapJsonObjects2(table sigs,scan=>true,dups=>true,deep=>10)
 )
 
-select avg(leaf_buckets),avg(stem_buckets) from exit get,get.levels
+select * from exit
+
+--select avg(leaf_buckets),avg(stem_buckets) from exit get,get.levels
