@@ -2,12 +2,17 @@
 -- Includes optional duplicate filtering based on value equality (see safe.format('%t',blob) > etc.)
 -- Decide: pass json as string or json?
 
-create or replace function tmp.getJsonBlobSig2(blob any type,schema string) as ((
+create or replace function tmp.getJsonObjectSignature(blob any type,schema string) as ((
   select as struct schema,(blob).to_json_string() jsn,farm_fingerprint(str) sig,length(str) rel,'any' type 
   from (select safe.format('%t',blob) str)
 ));
 
-create or replace function tmp.getJsonObjectTypes2(fragment string, tail string) as (
+create or replace function tmp.getJsonArraySignature(blob any type,schema string) as ((
+  select as struct schema,(blob).to_json_string() jsn,farm_fingerprint(str) sig,length(str) rel,'any' type 
+  from (select safe.format('%t',(blob).array_last()) str)
+));
+
+create or replace function tmp.getJsonObjectMarks(fragment string, tail string) as (
   case  
   when tail in ('[',']') then 
   struct(tail as mark,'ARRAY' as type,(fragment).rtrim(':[').replace('""','"undefined"') as item)
@@ -20,39 +25,34 @@ create or replace function tmp.getJsonObjectTypes2(fragment string, tail string)
   end
 ); 
 
-create or replace function tmp.getJsonObjectLinkerBinsSize (source any type, strength float64) as (
+create or replace function tmp.getSearchStepSize(source any type, strength float64) as (
   GREATEST(1, CAST((source.closes - source.opens) / pow(source.size,strength) AS INT64))
 );
 
-create or replace function tmp.mapJsonObjectLinksTo (source any type,target any type, strength float64) as ((
-  
-  /*with init as (
-    
-    select tmp.getJsonObjectLinkerBinsSize(source) as step
-      -- GREATEST(1, CAST(((source).closes - (source).opens) / pow((source).size,0.5) AS INT64)) as step limit 1
-  
-  )*/
-  select array(
-    select as struct 
-      tgt.type parent,tgt.data parname,tgt.slot parenth,if(src.entry,src.data,src.type) view,src.slot 
-      from unnest(source.nodes) src -- ,init
-    -- CROSS JOIN UNNEST(target) tgt WHERE src.close between tgt.open and tgt.close
-    JOIN ((
-      select as struct tgt.*, i * step as bid,
-      from unnest(target.nodes) tgt,--init,
-      unnest(GENERATE_ARRAY(
-          DIV(tgt.open, step),
-          DIV(tgt.close, step)
-        )) as i
-      )) tgt 
-    on DIV(src.open, step) * step = bid
-    and 
-    (src.open between tgt.open and tgt.close)
-    -- range_contains(tgt.line,src.line)
-    -- (src.open < tgt.close)
-  ) from (
-    select tmp.getJsonObjectLinkerBinsSize(source,strength) as step
-  )
+create or replace function tmp.getParentageFrom(source any type,target any type, step int) as (array(
+
+  select as struct 
+    src as source,tgt as target, --tgt.type parent,tgt.data parname,tgt.slot parenth,if(src.entry,src.data,src.type) view,src.slot 
+    from unnest(source) src -- ,init
+  -- CROSS JOIN UNNEST(target) tgt WHERE src.close between tgt.open and tgt.close
+  JOIN ((
+    select as struct tgt.*, i * step as bid,
+    from unnest(target) tgt,--init,
+    unnest(GENERATE_ARRAY(
+        DIV(tgt.open, step),
+        DIV(tgt.close, step)
+      )) as i
+    )) tgt 
+  on DIV(src.open, step) * step = bid
+  and 
+  (src.open between tgt.open and tgt.close)
+  -- range_contains(tgt.line,src.line)
+  -- (src.open < tgt.close)
+
+));
+
+create or replace function tmp.getJsonAncestors(source any type,target any type) as (
+  (source.nodes).(tmp.getParentageFrom)(target.nodes,tmp.getSearchStepSize(source,greatest(0.25,1.0 - (1.0 / SQRT(1+source.size))))
 ));
 
 create or replace function tmp.getJsonObjects2(str string, pick int) as (array(
@@ -64,7 +64,7 @@ create or replace function tmp.getJsonObjects2(str string, pick int) as (array(
   |> extend (SUM(LENGTH(frag)) OVER (ORDER BY off ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) + 1 ).ifnull(0) idx, right(frag,1) tail
   |> where tail not in (',',' ',', ')
 
-  |> select idx,tmp.getJsonObjectTypes2(frag,tail).*
+  |> select idx,tmp.getJsonObjectMarks(frag,tail).*
   |> extend mark in ('{','[') as opener, mark in (']','}') as closer,type in ('ENTRY') as entry
   |> extend if(entry,1,0) as lift 
 
@@ -169,17 +169,17 @@ real as (
 
 sigs as (
 
-  select tmp.getJsonBlobSig2(blob,typeof(blob)).*
+  select tmp.getJsonObjectSignature(blob,typeof(blob)).*
   from test -- limit 2
 )
 
 select  -- (levels).array_last().leafs.array_last()-- .data 
   array(
-    select as struct  depth,leafs[safe_offset(array_length(leafs)-1)].view a,stems[safe_offset(array_length(stems)-1)].view b 
+    select as struct depth,leafs[safe_offset(array_length(leafs)-1)].source.data a,stems[safe_offset(array_length(stems)-1)].target.data b 
     from (
       select depth,
-        (leaf).(tmp.mapJsonObjectLinksTo)(stem,/*0.5 + 0.25 * (1.0 - (1.0 / SQRT(1+leaf.size))*/ greatest(0.25,1.0 - (1.0 / SQRT(1+leaf.size)))) as leafs,
-        (stem).(tmp.mapJsonObjectLinksTo)(root,/*0.5 + 0.25 * (1.0 - (1.0 / SQRT(1+stem.size))*/ greatest(0.25,1.0 - (1.0 / SQRT(1+stem.size)))) as stems
+        (leaf).(tmp.getJsonAncestors)(stem) as leafs,
+        (stem).(tmp.getJsonAncestors)(root) as stems
       from unnest(levels) level -- limit 1 offset 1
     )
 
