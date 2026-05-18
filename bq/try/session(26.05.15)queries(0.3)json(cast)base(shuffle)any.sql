@@ -84,6 +84,17 @@ create or replace aggregate function tmp.getJsonObjectNodes(pick bool,obj struct
   ) 
 );
 
+
+/* to do: array chunking and optional whitespace handling
+select ('{"id":1,"data":[0,1,2,{"":["",""]},3,{"test":"okay"}, , ,8 , {} ,{}]}').replace('\\"','\x05\\')
+ --.regexp_extract_all(r'("[^"]*"\s*:\s*(?:"[^"]*"|[\d\.]+|true|false|null|[\[\{])|[\[\]\{\}]|\,\s*?|(?:(?:"[^"]*"|[\d\.]+|\btrue\b|\bfalse\b|\bnull\b)\,?)*)')
+ --.regexp_extract_all(r'("[^"]*"\s*:\s*(?:"[^"]*"|[\d\.]+|true|false|null|[\[\{])|[\[\]\{\}]|\,\s*?|(?:"[^"]*"|[\d\.]+|\btrue\b|\bfalse\b|\bnull\b))')
+ 
+ --v1--.regexp_extract_all(r'("[^"]*"\s*:\s*(?:"[^"]*"|[\d\.]+|true|false|null|[\[\{])\,?|[\[\]\{\}]|(?:[^\[\]\{\}]+?\s*\,?\s*)+)') -- \,{1}\s*?| 
+ --v2--.regexp_extract_all(r'("[^"]*"\s*:\s*(?:"[^"]*"|[\d\.]+|true|false|null|[\[\{])|[\[\]\{\}]|(?:"[^"]*"\s*\,*\s*)+|(?:[^\[\]\{\}\"]+?\s*\,+\s*)+|[^\[\]\{\}\,\:\"]+)') 
+ .regexp_extract_all(r'("[^"]*"\s*:\s*(?:"[^"]*"|[\d\.]+|true|false|null|[\[\{])(?:\s*\,\s*)?|[\[\]\{\}]|(?:"[^"]*"\s*\,*\s*)+|(?:[^\[\]\{\}\"]+?\s*\,+\s*)+|[^\[\]\{\}\,\:\"]+)')
+*/
+
 create or replace function tmp.getJsonObjects2(str string, pick int) as (array(
 
   from unnest(
