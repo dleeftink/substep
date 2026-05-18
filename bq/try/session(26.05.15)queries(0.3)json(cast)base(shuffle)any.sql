@@ -7,9 +7,21 @@ create or replace function tmp.getJsonObjectSignature(blob any type,schema strin
   from (select safe.format('%t',blob) str)
 ));
 
-create or replace function tmp.getJsonArraySignature(blob any type,schema string) as ((
-  select as struct schema,(blob).to_json_string() jsn,farm_fingerprint(str) sig,length(str) rel,'any' type 
-  from (select safe.format('%t',(blob).array_last()) str)
+create or replace function tmp.getJsonArraySignature(blob any type,schema string, scan int) as ((
+  select as struct schema,(blob).to_json_string() str,farm_fingerprint(str) sig,length(str) rel,'any' type 
+  from (
+    select if(len = 1,a,a||b) str,len from (
+      select len,
+        if(scan=0, safe.format('%t',array_first(blob)),
+        array_to_string(array(select safe.format('%t',blob[safe_offset(idx)]).ifnull('') from unnest(index) idx),'')) 
+        as a,
+        
+        if(scan=0 and len > 1, safe.format('%t',array_last(blob)),
+        array_to_string(array(select safe.format('%t',blob[safe_offset(len-1-idx)]).ifnull('') from unnest(index) idx),''))
+        as b
+      from (select array_length(blob) len,generate_array(0,scan) index)
+    )
+  )
 ));
 
 create or replace function tmp.getJsonObjectMarks(fragment string, tail string) as (
