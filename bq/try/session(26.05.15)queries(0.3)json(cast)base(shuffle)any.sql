@@ -67,6 +67,19 @@ create or replace function tmp.getJsonAncestors(source any type,target any type)
   (source.nodes).(tmp.getParentageFrom)(target.nodes,tmp.getSearchStepSize(target,(1.0 - (1.0 / SQRT(1+target.size))).greatest(0.25).least(1))
 ));
 
+create or replace aggregate function tmp.getJsonObjectNodes(pick bool,obj struct<
+  --raise int,depth int,
+    slot int,open int,close int,head string,type string,data string,tail string,entry bool
+  --,line range<timestamp>
+>) as (
+  struct(
+    min(if(pick,obj.open,null)) as opens,
+    max(if(pick,obj.close,null)) as closes,
+    array_agg(if(pick,obj,null) ignore nulls /*order by obj.open*/) as nodes,
+    countif(pick) as size
+  ) 
+);
+
 create or replace function tmp.getJsonObjects2(str string, pick int) as (array(
 
   from unnest(
@@ -103,37 +116,15 @@ create or replace function tmp.getJsonObjects2(str string, pick int) as (array(
   -- |> set data = if(entry,parse_json(concat('{',(data).replace('\x05',r'\"'),'}')).to_json_string(),null)  -- optionally parse json ...
 
   -- |> extend if(not entry,substring(str,greatest(0,open-1),1),null) as arr_ctx
-
-  |> extend range(timestamp_seconds(open),timestamp_seconds(close)) line 
-
-  |> as obj
+  -- |> extend range(timestamp_seconds(open),timestamp_seconds(close)) line 
+  
+  |> extend struct(slot,open,close,head,type,data,tail,entry) as obj -- |> as obj
   |> extend raise = 2 and type = 'ARRAY' as is_root,raise = 1 and not entry as is_stem,raise = 0 as is_leaf
   |> aggregate
 
-      struct(
-        min(if(is_leaf,open,null)) as opens,
-        max(if(is_leaf,close,null)) as closes,
-        array_agg(if(is_leaf,obj,null) ignore nulls /*order by obj.open*/) as nodes,
-        countif(is_leaf) as size,
-        null as bins
-      ) as leaf ,
-
-      struct(
-        min(if(is_stem,open,null)) as opens,
-        max(if(is_stem,close,null)) as closes,
-        array_agg(if(is_stem,obj,null) ignore nulls order by obj.open) as nodes,
-        array_agg(if(is_stem,obj.close,null) ignore nulls /*order by obj.open*/) as index,
-        countif(is_stem) as size,
-        null as bins
-      ) stem,
-
-      struct(
-        min(if(is_root,open,null)) as opens,
-        max(if(is_root,close,null)) as closes,
-        array_agg(if(is_root,obj,null) ignore nulls order by obj.open) as nodes,
-        array_agg(if(is_root,obj.close,null) ignore nulls /*order by obj.open*/) as index,
-        countif(is_root) as size
-      ) as root, -- acres
+      tmp.getJsonObjectNodes(is_leaf,obj) as leaf,
+      tmp.getJsonObjectNodes(is_stem,obj) as stem,
+      tmp.getJsonObjectNodes(is_root,obj) as root,
 
     group by depth
   
