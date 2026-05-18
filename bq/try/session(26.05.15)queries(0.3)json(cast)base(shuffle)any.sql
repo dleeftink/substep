@@ -102,9 +102,9 @@ create or replace function tmp.getJsonObjects2(str string, pick int) as (array(
   |> extend pre > depth as pin
   |> set depth = if(pin,pre,depth)
     
-  |> extend row_number() over(partition by depth order by idx) slot 
+  |> extend row_number() over(partition by pre,depth order by idx) slot 
   |> as obj
-  |> aggregate min_by(obj,pin) head,max_by(obj,pin) tail group by depth,slot - if(closer,1,0) as slot -- if(entry,item,type) 
+  |> aggregate min_by(obj,pin) head,max_by(obj,pin) tail group by depth, slot -- slot - if(closer,1,0) as slot -- if(entry,item,type) 
 
   |> cross join unnest(generate_array(0,(head.entry or depth >= pick).if(0,2))) raise
   |> set depth = depth + raise --,raise = if(raise = 0,true,false) 
