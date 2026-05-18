@@ -37,10 +37,6 @@ create or replace function tmp.getJsonObjectMarks(fragment string, tail string) 
   end
 ); 
 
-create or replace function tmp.getSearchStepSize(source any type, strength float64) as (
-  GREATEST(1, CAST((source.closes - source.opens) / pow(source.size,strength) AS INT64))
-);
-
 create or replace function tmp.getParentageFrom(source any type,target any type, step int) as (array(
 
   select as struct 
@@ -63,8 +59,12 @@ create or replace function tmp.getParentageFrom(source any type,target any type,
 
 ));
 
+create or replace function tmp.getSearchStepSize(source any type, strength float64) as (
+  GREATEST(1, CAST((source.closes - source.opens) / pow(source.size,strength) AS INT64))
+);
+
 create or replace function tmp.getJsonAncestors(source any type,target any type) as (
-  (source.nodes).(tmp.getParentageFrom)(target.nodes,tmp.getSearchStepSize(target,greatest(0.25,1.0 - (1.0 / SQRT(1+target.size))))
+  (source.nodes).(tmp.getParentageFrom)(target.nodes,tmp.getSearchStepSize(target,(1.0 - (1.0 / SQRT(1+target.size))).greatest(0.25).least(1))
 ));
 
 create or replace function tmp.getJsonObjects2(str string, pick int) as (array(
@@ -186,19 +186,24 @@ sigs as (
 
   select tmp.getJsonObjectSignature(blob,typeof(blob)).*
   from real limit 1
+),
+
+exit as (
+
+  select  -- (levels).array_last().leafs.array_last()-- .data 
+    array(
+      select as struct *, --depth,--leafs[safe_offset(array_length(leafs)-1)].source.data a,stems[safe_offset(array_length(stems)-1)].target.data b, 
+        leafs[safe_offset(array_length(leafs)-1)].target.buckets leaf_buckets,
+        stems[safe_offset(array_length(stems)-1)].target.buckets stem_buckets
+      from (
+        select depth,
+          (leaf).(tmp.getJsonAncestors)(stem) as leafs,
+          (stem).(tmp.getJsonAncestors)(root) as stems
+        from unnest(levels) level -- limit 1 offset 1
+      )
+  
+    )--.array_last() 
+    as levels from tmp.mapJsonObjects2(table sigs,scan=>true,dups=>true,deep=>10)
 )
 
-select  -- (levels).array_last().leafs.array_last()-- .data 
-  array(
-    select as struct depth,--leafs[safe_offset(array_length(leafs)-1)].source.data a,stems[safe_offset(array_length(stems)-1)].target.data b, 
-      leafs[safe_offset(array_length(leafs)-1)].target.buckets leaf_buckets,
-      stems[safe_offset(array_length(leafs)-1)].target.buckets stem_buckets
-    from (
-      select depth,
-        (leaf).(tmp.getJsonAncestors)(stem) as leafs,
-        (stem).(tmp.getJsonAncestors)(root) as stems
-      from unnest(levels) level -- limit 1 offset 1
-    )
-
-  )--.array_last() 
-  as levels from tmp.mapJsonObjects2(table sigs,scan=>true,dups=>true,deep=>10)
+select avg(leaf_buckets),avg(stem_buckets) from exit get,get.levels
