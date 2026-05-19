@@ -23,13 +23,15 @@ proc1 as (
         r'(?:"[^"]*"[\s\,]*)+',
         
         r'\s+',
-        r'(?:[^\[\]\{\}\"]+[\s\,]*)+',
+        r'(?:[^\[\]\{\}\"\:]+[\s\,]*)+',
         r'[\[\]\{\}\,]',
         r'[^\[\]\{\}\:\"\,\s]+'
   
       ],'|'),')')
       
-    ) as hits from init
+    )
+    hits from init
+  
 
 ),
 
@@ -50,7 +52,7 @@ proc2 as (
         r'\s+',
         
         -- 4. CATCH: Any long sequence of text not containing structural JSON markers
-        r'(?:[^\[\]\{\}\"]+[\s,]*)+',
+        r'(?:[^\[\]\{\}\"\:]+[\s,]*)+',
         
         -- 5. CATCH: Individual structural boundaries
         r'[\[\]\{\}\,]',
@@ -59,11 +61,14 @@ proc2 as (
         r'[^\[\]\{\}\:\"\,\s]+'
       ],'|'),')')
       
-    ) as hits from init
+    )
+    hits from init
+  
 
 ),
 
 check as (
+
   
   select 
     (select as struct (str).length(),array(select as struct hit,sum((hit).length()) over() from unnest(hits) hit) from proc1),
@@ -72,3 +77,4 @@ check as (
 )
 
 select * from check
+  
