@@ -1,11 +1,12 @@
 with init as (
 
   select str from (
-    select (hits).to_json_string(/*true*/) str from  `stack-curves.tables.hits` 
+    select (hits).to_json_string(true) str from  `stack-curves.tables.hits` 
     union all
-    select (hits).to_json_string(/*true*/) str from  `stack-curves.tables.hits`   
+    select (hits).to_json_string(true) str from  `stack-curves.tables.hits`   
   ) -- qualify true = max(true) over()
   -- where exists (select 1)
+  limit 1
 
 ),
 
@@ -49,7 +50,7 @@ wideReg as (
    .regexp_extract_all(
   
     r'('
-      -- 1. EXTRACT: Key/Value pairs (Assumes \" has been swapped to maintain length)
+      -- 1. EXTRACT: Key/Value pairs (Assumes JSON escaped double quotes inside string fields)
       r'"(?:[^"\\]|\\.)*"\s*:\s*(?:"[^"]*"|[-+\d.eE]+|true|false|null|[\[{])(?:\s*,)?'
       
       -- 2. EXTRACT: Isolated or consecutive string values
@@ -110,11 +111,11 @@ bareReg as (
   select str,
   
   (str)  -- no quote escaping
-   .regexp_replace(r'("(?:[^"\\]|\\.)*")|\s', r'\1')
+   .regexp_replace(r'("(?:[^"\\]|\\.)*")|\s', r'\1') -- remove all structural spacing
    .regexp_extract_all(
   
     r'(' 
-      -- 1. EXTRACT: Key/Value pairs (Assumes \" has been swapped to maintain length)
+      -- 1. EXTRACT: Key/Value pairs (Assumes JSON escaped double quotes inside string fields)
       r'"(?:[^"\\]|\\.)*":(?:"[^"]*"|[-+\d.eE]+|true|false|null|[\[{])\,?'
           
       -- 2. EXTRACT: Isolated or consecutive string values
@@ -132,6 +133,16 @@ bareReg as (
       
     ) as hits from init
 
+),
+
+check as (
+  
+  select (select str from init),
+    (select as struct (str).length(),array(select as struct hit,sum((hit).length()) over() from unnest(hits) hit limit 32) from wideEsc),
+    (select as struct (str).length(),array(select as struct hit,sum((hit).length()) over() from unnest(hits) hit limit 32) from wideReg),
+    (select as struct (str).length(),array(select as struct hit,sum((hit).length()) over() from unnest(hits) hit limit 32) from bareEsc),
+    (select as struct (str).length(),array(select as struct hit,sum((hit).length()) over() from unnest(hits) hit limit 32) from bareReg),
+
 )
 
-select (hits)[safe_offset(cast(rand()*(array_length(hits)-1-0) as int))].right(1) from wideEsc
+select * from check
