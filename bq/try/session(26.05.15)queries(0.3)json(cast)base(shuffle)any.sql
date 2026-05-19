@@ -84,32 +84,6 @@ create or replace aggregate function tmp.getJsonObjectNodes(pick bool,obj struct
   ) 
 );
 
-
-/* to do: array chunking and optional whitespace handling
-select ('{"id":1,"data":[0,1,2,{"":["",""]},3,{"test":"okay"}, , ,8 , {} ,{}]}').replace('\\"','\x05\\')
- --.regexp_extract_all(r'("[^"]*"\s*:\s*(?:"[^"]*"|[\d\.]+|true|false|null|[\[\{])|[\[\]\{\}]|\,\s*?|(?:(?:"[^"]*"|[\d\.]+|\btrue\b|\bfalse\b|\bnull\b)\,?)*)')
- --.regexp_extract_all(r'("[^"]*"\s*:\s*(?:"[^"]*"|[\d\.]+|true|false|null|[\[\{])|[\[\]\{\}]|\,\s*?|(?:"[^"]*"|[\d\.]+|\btrue\b|\bfalse\b|\bnull\b))')
- 
- --v1--.regexp_extract_all(r'("[^"]*"\s*:\s*(?:"[^"]*"|[\d\.]+|true|false|null|[\[\{])\,?|[\[\]\{\}]|(?:[^\[\]\{\}]+?\s*\,?\s*)+)') -- \,{1}\s*?| 
- --v2--.regexp_extract_all(r'("[^"]*"\s*:\s*(?:"[^"]*"|[\d\.]+|true|false|null|[\[\{])|[\[\]\{\}]|(?:"[^"]*"\s*\,*\s*)+|(?:[^\[\]\{\}\"]+?\s*\,+\s*)+|[^\[\]\{\}\,\:\"]+)') 
- --v3--.regexp_extract_all(r'("[^"]*"\s*:\s*(?:"[^"]*"|[\d\.]+|true|false|null|[\[\{])(?:\s*\,\s*)?|[\[\]\{\}]|(?:"[^"]*"\s*\,*\s*)+|(?:[^\[\]\{\}\"]+?\s*\,+\s*)+|[^\[\]\{\}\,\:\"]+)')
-*/
-
-/*
-
-select (str).length(),array(select as struct hit,sum((hit).length()) over() from unnest(hits) hit) from (
-select str,(str).replace('\\"','\x05\\')
- --v4--.regexp_extract_all(r'("[^"]*"\s*:\s*(?:"[^"]*"|[\d\.]+|true|false|null|[\[\{])(?:\s*\,\s*)?|[\[\]\{\}]|(?:"[^"]*"\s*\,*\s*)+|(?:[^\[\]\{\}\"]+?\s*\,+\s*)+|[^\[\]\{\}\:\"]+)')
- .regexp_extract_all(r'("[^"]*"\s*:\s*(?:"[^"]*"|[-\+\d\.e]+|true|false|null|[\[\{])(?:\s*\,\s*)?|[\[\]\{\}]|(?:"[^"]*"\s*\,*\s*)+|(?:[^\[\]\{\}\"]+?\s*\,+\s*)+|[^\[\]\{\}\:\"]+)') 
-
- -- investigate: leading 1,2,3 spacing 
- --.regexp_extract_all(r'("[^"]*"\s*:\s*(?:"[^"]*"|[-\+\d\.e]+|true|false|null|[\[\{])(?:\s*\,\s*)?|(?:"[^"]*"[\s\,]*)+|(?:[^\[\]\{\}\"]+?[\s\,]*)+|[\[\]\{\}\,]|[^\[\]\{\}\:\"\,\s]+)') -- \,{1}\s*?|
- 
-  hits from (select '{"id":1   ,"data":[0,1,2,{"":[" "  ,  "[]"]},7,{"test":"ok,ay"} ,, 3,,8 , {} ,, {}]},[  "," ],[1],[{    "named" : {    "struct" :   true }}]' as str)
-)
-
-*/
-
 create or replace function tmp.getJsonObjects2(str string, pick int) as (array(
 
   from unnest(
