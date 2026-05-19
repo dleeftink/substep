@@ -24,19 +24,6 @@ create or replace function tmp.getJsonArraySignature(blob any type,schema string
   )
 ));
 
-create or replace function tmp.getJsonObjectMarks(fragment string, tail string) as (
-  case  
-  when tail in ('[',']') then 
-  struct(tail as mark,'ARRAY' as type,(fragment).rtrim(':[').replace('""','"undefined"') as item)
-  
-  when tail in ('{','}') then 
-  struct(tail as mark,'OBJECT' as type,(fragment).rtrim(':{') as item)
-  
-  else 
-  struct(':' as mark, 'ENTRY' as type,fragment as item) 
-  end
-); 
-
 create or replace function tmp.getParentageFrom(source any type,target any type, step int) as (array(
 
   select as struct 
@@ -84,10 +71,27 @@ create or replace aggregate function tmp.getJsonObjectNodes(pick bool,obj struct
   ) 
 );
 
-create or replace function tmp.getJsonObjects2(str string, pick int) as (array(
+create or replace function tmp.layJsonExtractionPattern() as (
+  r'("[^"]*"\s*:\s*(?:"[^"]*"|[\d\.]+|true|false|null|[\[\{])|[\[\]\{\}]|\,\s*?)'
+);
+
+create or replace function tmp.getJsonObjectMarks(fragment string, tail string) as (
+  case  
+  when tail in ('[',']') then 
+  struct(tail as mark,'ARRAY' as type,(fragment).rtrim(':[').replace('""','"undefined"') as item)
+  
+  when tail in ('{','}') then 
+  struct(tail as mark,'OBJECT' as type,(fragment).rtrim(':{') as item)
+  
+  else 
+  struct(':' as mark, 'ENTRY' as type,fragment as item) 
+  end
+); 
+
+create or replace function tmp.getJsonObjects2(str string, pick int,rgx string) as (array(
 
   from unnest(
-    (str).replace('\\"','\x05\\').regexp_extract_all(r'("[^"]*"\s*:\s*(?:"[^"]*"|[\d\.]+|true|false|null|[\[\{])|[\[\]\{\}]|\,\s*?)')
+    (str).replace('\\"','\x05\\').regexp_extract_all(rgx)
   ) AS frag WITH OFFSET AS off
     
   |> extend (SUM(LENGTH(frag)) OVER (ORDER BY off ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) + 1 ).ifnull(0) idx, right(frag,1) tail
@@ -151,7 +155,7 @@ create or replace table function tmp.mapJsonObjects2(input table< /*schema strin
 
   )
 
-  select sig,tmp.getJsonObjects2(str,deep) levels from shuf
+  select sig,tmp.getJsonObjects2(str,deep,rgx=>tmp.layJsonExtractionPattern()) levels from shuf
 
 );
 
