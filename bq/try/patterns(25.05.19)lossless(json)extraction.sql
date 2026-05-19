@@ -1,7 +1,7 @@
 with init as (
 
   select (minify).if((str).regexp_replace(r'("(?:[^"\\]|\\.)*")|\s+', r'\1'),str) str from (
-    select '{"id":1   , \n  "data":[0,1,2,{"":[    " "  ,  "[]"]},7,{"test":"ok,ay"} ,, 3,,8 , {} ,, {}]},[  "," ],[   1,2,3,,",",   99 ],[{    "named" : {    "struct" :   true }}]' as str,
+    select '{"id":   true   , \n  "data":[   0,1,2,{"":[    " "  ,  "[]"]},7,{"test":"ok,ay"} ,, 3,,8 , {} ,, {}]},[  "," ],[   1,2,3,,",",   99 ],[{    "named" : {    "struct" :   true }}]' as str,
       false as minify 
   )
 
@@ -29,9 +29,7 @@ proc1 as (
   
       ],'|'),')')
       
-    )
-    hits from init
-  
+    ) as hits from init
 
 ),
 
@@ -61,18 +59,47 @@ proc2 as (
         r'[^\[\]\{\}\:\"\,\s]+'
       ],'|'),')')
       
-    )
-    hits from init
+   ) as hits from init
+
+),
+
+-- always minified
+
+proc3 as (
+
+  select str,
   
+  (str).replace('\\"','\x05\\')  
+   .regexp_replace(r'("[^"]*")|\s', r'\1')
+   .regexp_extract_all(
+  
+     ('(').concat(array_to_string([
+        -- 1. EXTRACT: Key/Value pairs (Assumes \" has been swapped to maintain length)
+        r'"[^"]*":(?:"[^"]*"|[-+\d.eE]+|true|false|null|[\[{])\,?',
+        
+        -- 2. EXTRACT: Isolated or consecutive string values
+        r'(?:"[^"]*"\,?)+',
+                
+        -- 3. CATCH: Any long sequence of text not containing structural JSON markers
+        r'(?:[^\[\]\{\}\"\:]+\,?)+',
+        
+        -- 4. CATCH: Individual structural boundaries
+        r'[\[\]\{\}\,]',
+        
+        -- 5. FALLBACK: Any leftover edge-case characters to ensure 100% losslessness
+        r'[^\[\]\{\}\:\"\,]+'
+      ],'|'),')')
+      
+    ) as hits from init
 
 ),
 
 check as (
-
   
-  select 
+  select (select str from init),
     (select as struct (str).length(),array(select as struct hit,sum((hit).length()) over() from unnest(hits) hit) from proc1),
     (select as struct (str).length(),array(select as struct hit,sum((hit).length()) over() from unnest(hits) hit) from proc2),
+    (select as struct (str).length(),array(select as struct hit,sum((hit).length()) over() from unnest(hits) hit) from proc3),
 
 )
 
