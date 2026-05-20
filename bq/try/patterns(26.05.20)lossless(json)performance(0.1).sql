@@ -142,6 +142,23 @@ create or replace function tmp.layJsonFragmentPattern2g() as (
   ')'
 );
 
+create or replace function tmp.layJsonFragmentPattern2gr() as (
+  -- 1. EXTRACT: Key/Value pairs with optional spacing (assumes spacing removed and regular JSON escaped double quotes inside string fields)
+    '(' r'"(?:[^"\\]|\\.)*":(?:[-+\d.eE]+|true|false|null|"(?:[^"\\]|\\.)*")\,?'
+  -- 2. EXTRACT: Named objects/arrays
+    '|' r'"(?:[^"\\]|\\.)*":[\[\{]'
+  -- 3. EXTRACT: Isolated string values
+    '|' r'"(?:[^"\\]|\\.)*"[\,]*'
+  -- 3. EXTRACT: Isolated or consecutive string values
+  --'|' r'\,?(?:"(?:[^"\\]|\\.)*"[\,]*)+'
+  -- 4. CATCH: Any long sequence of text not containing structural JSON markers
+    '|' r'[^\[\]\{\}\"]+\,*'
+  -- 5. CATCH: Individual structural boundaries
+    '|' r'[\[\]\{\}\,]'
+  -- 6. 
+  ')'
+);
+
 with init as (
   --select '{"test":[{"a":1},{"b":2}]},{"id":1,"data":[ ,  0,  "" ,1,  2,   {"":[,  " "  ,  "[]"   ]},7,{"test":"ok,ay"} ,, 3,,8 , {} ,, {}]},[  "," ],[1],[{    "named" : {    "struct" :   true }}]' as str
   select (hits).to_json_string(false) as str from `stack-curves.tables.hits` 
