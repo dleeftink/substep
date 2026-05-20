@@ -51,7 +51,7 @@ wideReg as (
   
     r'('
       -- 1. EXTRACT: Key/Value pairs (Assumes JSON escaped double quotes inside string fields)
-      r'"(?:[^"\\]|\\.)*"\s*:\s*(?:"[^"]*"|[-+\d.eE]+|true|false|null|[\[{])(?:\s*,)?'
+      r'"(?:[^"\\]|\\.)*"\s*:\s*(?:"(?:[^"\\]|\\.)*"|[-+\d.eE]+|true|false|null|[\[{])(?:\s*,)?'
       
       -- 2. EXTRACT: Isolated or consecutive string values
       r'|' r'(?:"(?:[^"\\]|\\.)*"[\s\,]*)+'
@@ -116,7 +116,7 @@ bareReg as (
   
     r'(' 
       -- 1. EXTRACT: Key/Value pairs (Assumes JSON escaped double quotes inside string fields)
-      r'"(?:[^"\\]|\\.)*":(?:"[^"]*"|[-+\d.eE]+|true|false|null|[\[{])\,?'
+      r'"(?:[^"\\]|\\.)*":(?:"(?:[^"\\]|\\.)*"|[-+\d.eE]+|true|false|null|[\[{])\,?'
           
       -- 2. EXTRACT: Isolated or consecutive string values
       r'|' r'(?:"(?:[^"\\]|\\.)*"\,?)+'
