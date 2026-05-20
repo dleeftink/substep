@@ -1,24 +1,22 @@
 create or replace function tmp.layJsonFragmentPattern2a() as (
-  -- 1. EXTRACT: Key/Value pairs with optional spacing (assumes JSON escaped double quotes inside string fields)
+  -- 1. EXTRACT: Key/Value pairs with optional spacing (assumes spacing and regular JSON escaped double quotes inside string fields)
     '(' r'"(?:[^"\\]|\\.)*"\s*:\s*(?:[-+\d.eE]+|true|false|null|"(?:[^"\\]|\\.)*")(?:\s*,)?'
-  -- 1. EXTRACT: Named objects/arrays
+  -- 2. EXTRACT: Named objects/arrays
     '|' r'"(?:[^"\\]|\\.)*"\s*:\s*[\[\{]'
-  -- 2. EXTRACT: Isolated or consecutive string values
+  -- 3. EXTRACT: Isolated or consecutive string values
     '|' r'(?:\,\s*)?(?:"(?:[^"\\]|\\.)*"[\s\,]*[^\:])+'
-  -- 3. CATCH: Pure whitespace blocks (Highly optimized in RE2)
+  -- 4. CATCH: Pure whitespace blocks (Highly optimized in RE2)
     '|' r'\s+'
-  -- 4. CATCH: Any long sequence of text not containing structural JSON markers
+  -- 5. CATCH: Any long sequence of text not containing structural JSON markers
     '|' r'(?:[^\[\]\{\}\"\:\s]+[\s\,]*)+'
-  -- 5. CATCH: Individual structural boundaries
+  -- 6. CATCH: Individual structural boundaries
     '|' r'[\[\]\{\}\,]'
-  -- 6. FALLBACK: Any leftover edge-case characters to ensure 100% losslessness
-  --'|' r'[^\[\]\{\}\:\"\,\s]+' 
   -- 7. 
   ')'
 );
 
 create or replace function tmp.layJsonFragmentPattern2b() as (
-  -- 1. EXTRACT: Key/Value pairs with optional spacing (assumes JSON escaped double quotes inside string fields)
+  -- 1. EXTRACT: Key/Value pairs with optional spacing (assumes spacing and regular JSON escaped double quotes inside string fields)
     '(' r'"(?:[^"\\]|\\.)*"\s*:\s*(?:[\[\{]|(?:"(?:[^"\\]|\\.)*"|[-+\d.eE]+|true|false|null)(?:\s*,)?)'
   -- 2. EXTRACT: Isolated or consecutive string values
     '|' r'(?:\,\s*)?(?:"(?:[^"\\]|\\.)*"[\s\,]*[^\:])+'
@@ -28,35 +26,31 @@ create or replace function tmp.layJsonFragmentPattern2b() as (
     '|' r'(?:[^\[\]\{\}\"\:\s]+[\s\,]*)+'
   -- 5. CATCH: Individual structural boundaries
     '|' r'[\[\]\{\}\,]'
-  -- 6. FALLBACK: Any leftover edge-case characters to ensure 100% losslessness
-  --'|' r'[^\[\]\{\}\:\"\,\s]+' 
-  -- 7. 
+  -- 6. 
   ')'
 );
 
 -- requires double quote substitution
 create or replace function tmp.layJsonFragmentPattern2c() as (
-  -- 1. EXTRACT: Key/Value pairs with optional spacing (assumes JSON escaped double quotes inside string fields)
+  -- 1. EXTRACT: Key/Value pairs with optional spacing (assumes spacing and that JSON escaped double quotes have been substituted)
     '(' r'"[^"]*"\s*:\s*(?:[-+\d.eE]+|true|false|null|"[^"]*")(?:\s*,)?'
-  -- 1. EXTRACT: Named objects/arrays
+  -- 2. EXTRACT: Named objects/arrays
     '|' r'"[^"]*"\s*:\s*[\[\{]'
-  -- 2. EXTRACT: Isolated or consecutive string values
+  -- 3. EXTRACT: Isolated or consecutive string values
     '|' r'(?:\,\s*)?(?:"[^"]*"[\s\,]*[^\:])+'
-  -- 3. CATCH: Pure whitespace blocks (Highly optimized in RE2)
+  -- 4. CATCH: Pure whitespace blocks (Highly optimized in RE2)
     '|' r'\s+'
-  -- 4. CATCH: Any long sequence of text not containing structural JSON markers
+  -- 5. CATCH: Any long sequence of text not containing structural JSON markers
     '|' r'(?:[^\[\]\{\}\"\:\s]+[\s\,]*)+'
-  -- 5. CATCH: Individual structural boundaries
+  -- 6. CATCH: Individual structural boundaries
     '|' r'[\[\]\{\}\,]'
-  -- 6. FALLBACK: Any leftover edge-case characters to ensure 100% losslessness
-  --'|' r'[^\[\]\{\}\:\"\,\s]+' 
   -- 7. 
   ')'
 );
 
 -- requires double quote substitution --> most performant?
 create or replace function tmp.layJsonFragmentPattern2d() as (
-  -- 1. EXTRACT: Key/Value pairs with optional spacing (assumes JSON escaped double quotes inside string fields)
+  -- 1. EXTRACT: Named object/arrays and key/Value pairs with optional spacing (assumes spacing and that JSON escaped double quotes have been substituted)
     '(' r'"[^"]*"\s*:\s*(?:"[^"]*"|[\[\{]|(?:[-+\d.eE]+|true|false|null)(?:\s*,)?)'
   -- 2. EXTRACT: Isolated or consecutive string values
     '|' r'(?:\,\s*)?(?:"[^"]*"[\s\,]*[^\:])+'
@@ -66,55 +60,48 @@ create or replace function tmp.layJsonFragmentPattern2d() as (
     '|' r'(?:[^\[\]\{\}\"\:\s]+[\s\,]*)+'
   -- 5. CATCH: Individual structural boundaries
     '|' r'[\[\]\{\}\,]'
-  -- 6. FALLBACK: Any leftover edge-case characters to ensure 100% losslessness
-  --'|' r'[^\[\]\{\}\:\"\,\s]+' 
   -- 7. 
   ')'
 );
 
 create or replace function tmp.layJsonFragmentPattern2e() as (
-  -- 1. EXTRACT: Key/Value pairs with optional spacing (assumes JSON escaped double quotes inside string fields)
+  -- 1. EXTRACT: Named object/arrays and key/Value pairs with optional spacing (assumes spacing removed and that JSON escaped double quotes have been substituted)
     '(' r'"[^"]*":(?:[\[\{]|(?:[-+\d.eE]+|true|false|null|"[^"]*")\,?)'
   -- 2. EXTRACT: Isolated or consecutive string values
     '|' r'\,?(?:"[^"]*"\,*[^\:])+'
-  -- 4. CATCH: Any long sequence of text not containing structural JSON markers
+  -- 3. CATCH: Any long sequence of text not containing structural JSON markers
     '|' r'(?:[^\[\]\{\}\"\:]+\,*)+'
-  -- 5. CATCH: Individual structural boundaries
+  -- 4. CATCH: Individual structural boundaries
     '|' r'[\[\]\{\}\,]'
-  -- 6. FALLBACK: Any leftover edge-case characters to ensure 100% losslessness
-  --'|' r'[^\[\]\{\}\:\"\,\s]+' 
-  -- 7. 
+  -- 5. 
   ')'
 );
 
 create or replace function tmp.layJsonFragmentPattern2f() as (
-  -- 1. EXTRACT: Key/Value pairs with optional spacing (assumes JSON escaped double quotes inside string fields)
+  -- 1. EXTRACT: Named object/arrays and key/Value pairs (assumes spacing removed and regular JSON escaped double quotes inside string fields)
     '(' r'"(?:[^"\\]|\\.)*":(?:[\[\{]|(?:[-+\d.eE]+|true|false|null|"(?:[^"\\]|\\.)*")\,?)'
   -- 2. EXTRACT: Isolated or consecutive string values
     '|' r'\,?(?:"(?:[^"\\]|\\.)*"\,*[^\:])+'
-  -- 4. CATCH: Any long sequence of text not containing structural JSON markers
+  -- 3. CATCH: Any long sequence of text not containing structural JSON markers
     '|' r'\,?(?:[^\[\]\{\}\"\:\,]+\,*)+'
-  -- 5. CATCH: Individual structural boundaries
+  -- 4. CATCH: Individual structural boundaries
     '|' r'[\[\]\{\}\,]'
-  -- 6. FALLBACK: Any leftover edge-case characters to ensure 100% losslessness
-  --'|' r'[^\[\]\{\}\:\"\,\s]+' 
-  -- 7. 
+  -- 5. 
   ')'
 );
 
 create or replace function tmp.layJsonFragmentPattern2fb() as (
-  -- 1. EXTRACT: Key/Value pairs with optional spacing (assumes JSON escaped double quotes inside string fields)
+  -- 1. EXTRACT: Key/Value pairs with optional spacing (assumes spacing removed and regular JSON escaped double quotes inside string fields)
     '(' r'"(?:[^"\\]|\\.)*":(?:[-+\d.eE]+|true|false|null|"(?:[^"\\]|\\.)*")\,?'
+  -- 2. EXTRACT: Named objects/arrays
     '|' r'"(?:[^"\\]|\\.)*":[\[\{]'
-  -- 2. EXTRACT: Isolated or consecutive string values
+  -- 3. EXTRACT: Isolated or consecutive string values
     '|' r'\,?(?:"(?:[^"\\]|\\.)*"\,*[^\:])+'
   -- 4. CATCH: Any long sequence of text not containing structural JSON markers
     '|' r'\,?(?:[^\[\]\{\}\"\:\,]+\,*)+'
   -- 5. CATCH: Individual structural boundaries
     '|' r'[\[\]\{\}\,]'
-  -- 6. FALLBACK: Any leftover edge-case characters to ensure 100% losslessness
-  --'|' r'[^\[\]\{\}\:\"\,\s]+' 
-  -- 7. 
+  -- 6. 
   ')'
 );
 
@@ -137,7 +124,7 @@ proc as (
 
 test as (
 
-  -- trim not needed for patterns e/f/fb --> whitespace already removed destructively
+  -- trim not needed for patterns e/f/fb --> whitespace removed destructively
 
   select as struct (str).length() len,
     array(select as struct (hit).rtrim('\t\n\r '),sum((hit).length()) over() 
