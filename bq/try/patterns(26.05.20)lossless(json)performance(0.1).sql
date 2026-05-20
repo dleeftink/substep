@@ -163,9 +163,9 @@ create or replace function tmp.layJsonFragmentPattern2gr() as (
   -- 2. EXTRACT: Named objects/arrays
     '|' r'"(?:[^"\\]|\\.)*":[\[\{]'
   -- 3. EXTRACT: Isolated string values
-    '|' r'"(?:[^"\\]|\\.)*"\,*'
+  --'|' r'"(?:[^"\\]|\\.)*"\,*'
   -- 3. EXTRACT: Isolated or consecutive string values
-  --'|' r'\,?(?:"(?:[^"\\]|\\.)*"[\,]*)+'
+    '|' r'\,?(?:"(?:[^"\\]|\\.)*"\,*)+'
   -- 4. CATCH: Any long sequence of text not containing structural JSON markers
     '|' r'[^\[\]\{\}\"]+\,*'
   -- 5. CATCH: Individual structural boundaries
