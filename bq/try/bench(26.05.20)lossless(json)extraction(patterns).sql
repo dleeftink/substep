@@ -92,6 +92,7 @@ with exit as (
   
   SELECT
     strategy,
+    elapsed_time_sec,
     -- Calculate percentiles across the entire strategy population safely
     PERCENTILE_CONT(elapsed_time_sec, 0.5) OVER(PARTITION BY strategy) AS p50_elapsed_sec,
     PERCENTILE_CONT(elapsed_time_sec, 0.9) OVER(PARTITION BY strategy) AS p90_elapsed_sec,
@@ -112,6 +113,7 @@ aggs as (
     strategy,
     COUNT(*) AS total_successful_runs,
     -- Take the MAX or MIN of the percentiles since they are already calculated uniformly per strategy
+    avg(elapsed_time_sec) as avg_elapsed_time,
     MAX(p50_elapsed_sec) AS p50_elapsed_sec,
     MAX(p90_elapsed_sec) AS p90_elapsed_sec,
     -- Average the remaining resource metrics safely
@@ -128,3 +130,15 @@ aggs as (
 )
 
 select * from aggs
+
+/*
+
+Row	strategy	total_successful_runs	avg_elapsed_time	p50_elapsed_sec	p90_elapsed_sec	avg_total_slot_sec	avg_min_stage_slot_sec	avg_max_stage_slot_sec	avg_mb_processed	avg_mb_shuffled	avg_mb_spilled
+1	Strategy_A	25	null	1.468	1.7498	27.122	0.042	23.128	17.59	196.13	0.0	
+2	Strategy_B	25	1.3792272727272727	1.3929	1.6088	24.882	0.048	21.027	17.59	196.13	0.0	
+3	Strategy_C	25	1.4126666666666672	1.3795	1.6032	25.672	0.04	21.918	17.59	196.13	0.0
+4	Strategy_D	25	1.32604	1.296	1.5466	24.759	0.038	21.055	17.59	196.13	0.0	
+5	Strategy_E	25	1.5662	1.564	1.7354	39.528	0.041	35.817	17.59	196.13	0.0
+6	Strategy_F	25	1.54084	1.486	1.819	30.14	0.041	26.367	17.59	196.13	0.0
+
+*/

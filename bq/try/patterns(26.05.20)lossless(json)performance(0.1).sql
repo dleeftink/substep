@@ -115,11 +115,21 @@ with init as (
 
 proc as (
 
+  -- assume whitespace -> keep
   -- select str,(str).regexp_extract_all(tmp.layJsonFragmentPattern2a()) hits from init
-  
-  --select str,(str).replace('\\"','\x05\\').regexp_extract_all(tmp.layJsonFragmentPattern2d()) hits from init
-  --select str,(str).replace('\\"','\x05\\')  .regexp_replace(r'("[^"]*")|\s', r'\1').regexp_extract_all(tmp.layJsonFragmentPattern2e()) hits from init
-  select str,(str).regexp_replace(r'("(?:[^"\\]|\\.)*")|\s+', r'\1').regexp_extract_all(tmp.layJsonFragmentPattern2f()) hits from init
+  -- select str,(str).regexp_extract_all(tmp.layJsonFragmentPattern2b()) hits from init
+  -- select str,(str).replace('\\"','\x05\\').regexp_extract_all(tmp.layJsonFragmentPattern2c()) hits from init
+  select str,(str).replace('\\"','\x05\\').regexp_extract_all(tmp.layJsonFragmentPattern2d()) hits from init
+
+  -- assume whitespace -> drop
+  -- select str,(str).replace('\\"','\x05\\')  .regexp_replace(r'("[^"]*")|\s', r'\1').regexp_extract_all(tmp.layJsonFragmentPattern2e()) hits from init
+  -- select str,(str).regexp_replace(r'("(?:[^"\\]|\\.)*")|\s+', r'\1').regexp_extract_all(tmp.layJsonFragmentPattern2f()) hits from init
+  -- select str,(str).regexp_replace(r'("(?:[^"\\]|\\.)*")|\s+', r'\1').regexp_extract_all(tmp.layJsonFragmentPattern2g()) hits from init
+
+  -- assume whitespace -> none
+  -- select str,(str).replace('\\"','\x05\\').regexp_extract_all(tmp.layJsonFragmentPattern2e()) hits from init
+  -- select str,(str).regexp_extract_all(tmp.layJsonFragmentPattern2f()) hits from init
+  -- select str,(str).regexp_extract_all(tmp.layJsonFragmentPattern2g()) hits from init
 ),
 
 test as (
