@@ -15,6 +15,7 @@ create or replace function tmp.layJsonFragmentPattern2a() as (
   ')'
 );
 
+-- current best for space aware matching (needs no post-processing \x05 replacement)
 create or replace function tmp.layJsonFragmentPattern2b() as (
   -- 1. EXTRACT: Key/Value pairs with optional spacing (assumes spacing and regular JSON escaped double quotes inside string fields)
     '(' r'"(?:[^"\\]|\\.)*"\s*:\s*(?:[\[\{]|(?:"(?:[^"\\]|\\.)*"|[-+\d.eE]+|true|false|null)(?:\s*,)?)'
@@ -24,6 +25,23 @@ create or replace function tmp.layJsonFragmentPattern2b() as (
     '|' r'\s+'
   -- 4. CATCH: Any long sequence of text not containing structural JSON markers
     '|' r'(?:[^\[\]\{\}\"\:\s]+[\s\,]*)+'
+  -- 5. CATCH: Individual structural boundaries
+    '|' r'[\[\]\{\}\,]'
+  -- 6. 
+  ')'
+);
+
+create or replace function tmp.layJsonFragmentPattern2br() as (
+  -- 1. EXTRACT: Key/Value pairs with optional spacing (assumes spacing and regular JSON escaped double quotes inside string fields)
+    '(' r'"(?:[^"\\]|\\.)*"\s*:\s*(?:[\[\{]|(?:"(?:[^"\\]|\\.)*"|[-+\d.eE]+|true|false|null)(?:\s*,)?)'
+  -- 2. EXTRACT: Isolated string values
+  --'|' r'"(?:[^"\\]|\\.)*"[\s\,]*'
+  -- 2. EXTRACT: Isolated or consecutive string values
+    '|' r'(?:\,\s*)?(?:"(?:[^"\\]|\\.)*"[\s\,]*)+'
+  -- 3. CATCH: Pure whitespace blocks (Highly optimized in RE2)
+    '|' r'\s+'
+  -- 4. CATCH: Any long sequence not containing structural JSON markers
+    '|' r'[^\[\]\{\}\"]+[\s\,]*'
   -- 5. CATCH: Individual structural boundaries
     '|' r'[\[\]\{\}\,]'
   -- 6. 
@@ -90,7 +108,9 @@ create or replace function tmp.layJsonFragmentPattern2f() as (
   ')'
 );
 
-create or replace function tmp.layJsonFragmentPattern2fb() as (
+-- current best for dense matching (needs no post-processing \x05 replacement)
+
+create or replace function tmp.layJsonFragmentPattern2g() as (
   -- 1. EXTRACT: Key/Value pairs with optional spacing (assumes spacing removed and regular JSON escaped double quotes inside string fields)
     '(' r'"(?:[^"\\]|\\.)*":(?:[-+\d.eE]+|true|false|null|"(?:[^"\\]|\\.)*")\,?'
   -- 2. EXTRACT: Named objects/arrays
@@ -134,7 +154,7 @@ proc as (
 
 test as (
 
-  -- trim not needed for patterns e/f/fb --> whitespace removed destructively
+  -- trim not needed for patterns e/f/g --> whitespace removed destructively or none assumed
 
   select as struct (str).length() len,
     array(select as struct (hit).rtrim('\t\n\r '),sum((hit).length()) over() 
