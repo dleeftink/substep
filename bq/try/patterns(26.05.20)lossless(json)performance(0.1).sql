@@ -66,7 +66,7 @@ create or replace function tmp.layJsonFragmentPattern2c() as (
   ')'
 );
 
--- requires double quote substitution --> most performant?
+-- requires double quote substitution --> most performant only if we don't consider the later \x05 subsitution step
 create or replace function tmp.layJsonFragmentPattern2d() as (
   -- 1. EXTRACT: Named object/arrays and key/Value pairs with optional spacing (assumes spacing and that JSON escaped double quotes have been substituted)
     '(' r'"[^"]*"\s*:\s*(?:"[^"]*"|[\[\{]|(?:[-+\d.eE]+|true|false|null)(?:\s*,)?)'
@@ -76,6 +76,23 @@ create or replace function tmp.layJsonFragmentPattern2d() as (
     '|' r'\s+'
   -- 4. CATCH: Any long sequence of text not containing structural JSON markers
     '|' r'(?:[^\[\]\{\}\"\:\s]+[\s\,]*)+'
+  -- 5. CATCH: Individual structural boundaries
+    '|' r'[\[\]\{\}\,]'
+  -- 7. 
+  ')'
+);
+
+create or replace function tmp.layJsonFragmentPattern2dr() as (
+  -- 1. EXTRACT: Named object/arrays and key/Value pairs with optional spacing (assumes spacing and that JSON escaped double quotes have been substituted)
+    '(' r'"[^"]*"\s*:\s*(?:"[^"]*"|[\[\{]|(?:[-+\d.eE]+|true|false|null)(?:\s*,)?)'
+  -- 2. EXTRACT: Isolated string values
+    '|' r'"[^"]*"[\s\,]*'
+  -- 2. EXTRACT: Isolated or consecutive string values
+  --'|' r'(?:\,\s*)?(?:"[^"]*"[\s\,]*)+'
+  -- 3. CATCH: Pure whitespace blocks (Highly optimized in RE2)
+    '|' r'\s+'
+  -- 4. CATCH: Any long sequence of text not containing structural JSON markers
+    '|' r'[^\[\]\{\}\"]+[\s\,]*'
   -- 5. CATCH: Individual structural boundaries
     '|' r'[\[\]\{\}\,]'
   -- 7. 
