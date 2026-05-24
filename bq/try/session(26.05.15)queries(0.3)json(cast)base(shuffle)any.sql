@@ -75,6 +75,25 @@ create or replace function tmp.layJsonExtractionPattern() as (
   r'("[^"]*"\s*:\s*(?:"[^"]*"|[\d\.]+|true|false|null|[\[\{])|[\[\]\{\}]|\,\s*?)'
 );
 
+create or replace function tmp.layJsonPartials() as (
+
+  -- 1. EXTRACT: Key/Value pairs with optional spacing (assumes spacing and regular JSON escaped double quotes inside string fields)
+    '(' r'"(?:[^"\\]|\\.)*"\s*:\s*(?:[\[\{]|(?:"(?:[^"\\]|\\.)*"|[-+\d.eE]+|true|false|null)(?:\s*,)?)'
+  -- 2. EXTRACT: Isolated string values
+  --'|' r'"(?:[^"\\]|\\.)*"[\s\,]*'
+  -- 2. EXTRACT: Isolated or consecutive string values
+    '|' r'(?:\,\s*)?(?:"(?:[^"\\]|\\.)*"[\s\,]*)+'
+  -- 3. CATCH: Pure whitespace blocks (Highly optimized in RE2)
+    '|' r'\s+'
+  -- 4. CATCH: Any long sequence not containing structural JSON markers
+    '|' r'[^\[\]\{\}\"]+[\s\,]*'
+  -- 5. CATCH: Individual structural boundaries with trailing comma (note: may match orphan commas if they weren't already subsumed greedily)
+    '|' r'[\[\{\}\]\,]\,?'
+  -- 6. 
+    ')'
+  
+);
+
 create or replace function tmp.getJsonObjectMarks(fragment string, tail string) as (
   case  
   when tail in ('[',']') then 
