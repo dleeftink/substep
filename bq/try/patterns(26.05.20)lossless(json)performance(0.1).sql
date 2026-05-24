@@ -209,7 +209,7 @@ create or replace function tmp.layJsonFragmentPattern(wide bool) as (
 );
 
 with init as (
-  --select '{"test":[{"a":1},{"b":2}]},{"id":1,"data":[ ,  0,  "" ,1,  2,   {"":[,  " "  ,  "[]"   ]},7,{"test":"ok,ay"} ,, 3,,8 , {} ,, {}]},[  "," ],[1],[{    "named" : {    "struct" :   true }}]' as str
+  -- select '({"test":[{"a":1},{"b":2}],"transaction":null,"nested":{"id":1,"data":[ ,  0,  "" ,1,  2,   {"":[,  " "  ,  "[]"   ]}]},"arr":[{},7,],"second":[{"test":"ok,ay"} ,, 3,,8 , {} ,, {}],"arr2":[[  "," ],[1]],"arr3":[{    "named" : {    "struct" :   true }}]})'
   select (hits).to_json_string(false) as str from `stack-curves.tables.hits` 
   -- qualify true = max(true) over()
   limit 1
