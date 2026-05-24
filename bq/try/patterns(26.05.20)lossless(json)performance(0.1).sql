@@ -174,6 +174,40 @@ create or replace function tmp.layJsonFragmentPattern2gr() as (
   ')'
 );
 
+create or replace function tmp.layJsonFragmentPattern(wide bool) as (
+  case when wide then
+  -- 1. EXTRACT: Key/Value pairs with optional spacing (assumes spacing and regular JSON escaped double quotes inside string fields)
+    '(' r'"(?:[^"\\]|\\.)*"\s*:\s*(?:[\[\{]|(?:"(?:[^"\\]|\\.)*"|[-+\d.eE]+|true|false|null)(?:\s*,)?)'
+  -- 2. EXTRACT: Isolated string values
+  --'|' r'"(?:[^"\\]|\\.)*"[\s\,]*'
+  -- 2. EXTRACT: Isolated or consecutive string values
+    '|' r'(?:\,\s*)?(?:"(?:[^"\\]|\\.)*"[\s\,]*)+'
+  -- 3. CATCH: Pure whitespace blocks (Highly optimized in RE2)
+    '|' r'\s+'
+  -- 4. CATCH: Any long sequence not containing structural JSON markers
+    '|' r'[^\[\]\{\}\"]+[\s\,]*'
+  -- 5. CATCH: Individual structural boundaries with trailing comma (note: may match orphan commas if they weren't already subsumed greedily)
+    '|' r'[\[\{\}\]\,]\,?'
+  -- 6. 
+    ')'
+  
+  else
+
+  -- 1. EXTRACT: Named object/arrays and key/Value pairs (assumes spacing removed and regular JSON escaped double quotes inside string fields)
+    '(' r'"(?:[^"\\]|\\.)*":(?:[\[\{]|(?:"(?:[^"\\]|\\.)*"|[-+\d.eE]+|true|false|null)\,?)'
+  --'|' r'\s*\S*'
+  -- 2. EXTRACT: Isolated or consecutive string values
+  --'|' r'"(?:[^"\\]|\\.)*"\,*'
+  -- 2. EXTRACT: Isolated or consecutive string values
+    '|' r'\,?(?:"(?:[^"\\]|\\.)*"\,*)+'
+  -- 3. CATCH: Any long sequence of text not containing structural JSON markers
+    '|' r'[^\[\]\{\}\"]+\,*'
+  -- 4. CATCH: Individual structural boundaries (note: may match orphan commas if they weren't already subsumed greedily)
+    '|' r'[\[\]\{\}\,]\,?'
+  -- 5. 
+  ')' end
+);
+
 with init as (
   --select '{"test":[{"a":1},{"b":2}]},{"id":1,"data":[ ,  0,  "" ,1,  2,   {"":[,  " "  ,  "[]"   ]},7,{"test":"ok,ay"} ,, 3,,8 , {} ,, {}]},[  "," ],[1],[{    "named" : {    "struct" :   true }}]' as str
   select (hits).to_json_string(false) as str from `stack-curves.tables.hits` 
