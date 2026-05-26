@@ -19,16 +19,24 @@ create or replace function tmp.layJsonPartials() as (
 
 create or replace table function tmp.mapJsonFragmentTypes(input table <part string, off int>) as ( 
   from input
-    |> extend (SUM(LENGTH(part)) OVER (ORDER BY off ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) + 1 ).ifnull(0) idx,
-    |> extend (part).trim('\t\n\r ').nullif('') bare |> where bare is not null
-    |> extend (bare).rtrim(',') as clip
-    |> extend (clip).rtrim('\t\n\r ').right(1) as tail
-    |> extend (tail) in ('{','}','[',']').if(tail,null) as sym,(clip).regexp_extract(r'^("(?:[^"\\]|\\.)*"\s*:\s*)') as key,((bare).right(1) = ',').if(',',null) as sep
-    |> extend (key is not null and sym is null).if((clip).right(length(clip)-length(key)),null) as val
-    |> extend key is null and sym is null and val is null as run
-    |> extend (run).if(length(clip) - (clip).regexp_replace(r'("(?:[^"\\]|\\.)*")|\,', r'\1').length() + 1,null) as len
-    |> set key = (key).rtrim(':'),val = (run).if(clip,val)
-    |> select * except(off,part,bare,clip,tail,run)
+  |> extend (SUM(LENGTH(part)) OVER (ORDER BY off ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) + 1 ).ifnull(0) idx,
+  |> extend (part).trim('\t\n\r ').nullif('') bare 
+  |> where bare is not null
+
+  |> extend (bare).rtrim(',') as clip
+  |> extend (clip).rtrim('\t\n\r ').right(1) as tail
+  |> extend 
+      (tail) in ('{','}','[',']').if(tail,null) as sym,
+      (clip).regexp_extract(r'^("(?:[^"\\]|\\.)*"\s*:\s*)') as key,
+      (bare).right(1) in (',').if(',',null) as sep
+
+  |> extend (key is not null and sym is null).if((clip).right(length(clip)-length(key)),null) as val
+  |> extend key is null and sym is null and val is null as run
+
+  -- to do: handle sparse arrays consistently
+  |> extend (run).if(length(clip) - (clip).regexp_replace(r'("(?:[^"\\]|\\.)*")|\,', r'\1').length() + 1,null) as len
+  |> set key = (key).rtrim(' :'),val = (run).if(clip,val)
+  |> select * except(off,part,bare,clip,tail,run)
 
 );
 
@@ -51,7 +59,7 @@ with real as (
       select (hits) from `stack-curves.tables.hits` -- limit 1
       union all
       select (hits) from `stack-curves.tables.hits` -- limit 1
-    ),unnest([true]) as wide qualify true = max(true) over()
+    ),unnest([false]) as wide qualify true = max(true) over()
    --  limit 1
   
 ),
@@ -59,17 +67,18 @@ with real as (
 line as (
 
   --select '{"test":[{"a":1},{"b":2}],"transaction":null,"nested":{"id":1,"data":[ ,  0,  "" ,1,  2,   {"":[,  " "  ,  "[]"   ]}]},"arr":[{},7,],"second":[{"test":"ok,ay"} ,, 3,,8 , {} ,, {}],"arr2":[[  "," ],[1]],"arr3":[{    "named" : {    "struct" :   true }}]}' as str, true as wide
-  select '{"mixed":[ 1, 2,3,{"nested": true  } ,{"null":true},,,,,4,5,  ", ", " "  ], "okay":false}' as str,true as wide
+  select '{"mixed":[ 1, 2,3,{"nested": true  } ,{"null":true},, ,,, ,, ,4,5,  ", ", " "  ], "okay":false}' as str,true as wide
 ),
 
 proc as (
   
   select str,(str).length() len,tmp.getJsonObjects3(str) as hits,wide
-  from line
+  from real
+
 
 )
 
---select (hits)[safe_offset(cast((rand() * array_length(hits)-1) as int))].key/*.right(1)*/ from proc;
+select (hits)[safe_offset(cast((rand() * array_length(hits)-1) as int))]/*.right(1)*/ from proc;
 --select (hits).array_last().right(2) from proc;
 
-select * from proc
+--select hits from proc -- where array_length(hits) > 0
