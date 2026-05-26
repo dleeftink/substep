@@ -19,11 +19,17 @@ create or replace function tmp.layJsonPartials() as (
 
 create or replace table function tmp.mapJsonFragmentTypes(input table <part string, off int>) as ( 
   from input
-    |> extend (part).trim('\t\n\r ').nullif('') bare,
-    |> extend (bare).rtrim(',') as clip
-    |> extend (clip).right(1) as tail
-    |> extend (tail) in ('{','}','[',']').if(tail,'') as sym,((bare).right(1) = ',').if(',','') as sep
     |> extend (SUM(LENGTH(part)) OVER (ORDER BY off ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) + 1 ).ifnull(0) idx,
+    |> extend (part).trim('\t\n\r ').nullif('') bare |> where bare is not null
+    |> extend (bare).rtrim(',') as clip
+    |> extend (clip).rtrim('\t\n\r ').right(1) as tail
+    |> extend (tail) in ('{','}','[',']').if(tail,null) as sym,(clip).regexp_extract(r'^("(?:[^"\\]|\\.)*"\s*:\s*)') as key,((bare).right(1) = ',').if(',',null) as sep
+    |> extend (key is not null and sym is null).if((clip).right(length(clip)-length(key)),null) as val
+    |> extend key is null and sym is null and val is null as run
+    |> extend (run).if(length(clip) - (clip).regexp_replace(r'("(?:[^"\\]|\\.)*")|\,', r'\1').length() + 1,null) as len
+    |> set key = (key).rtrim(':'),val = (run).if(clip,val)
+    |> select * except(off,part,bare,clip,tail,run)
+
 );
 
 create or replace function tmp.getJsonObjects3(str string) as (
@@ -33,7 +39,7 @@ create or replace function tmp.getJsonObjects3(str string) as (
       (str).regexp_extract_all(tmp.layJsonPartials())
     ) part with offset off
     |> call tmp.mapJsonFragmentTypes()
-    |> select as struct * except(part)
+    |> select as struct *
   
   )
 
@@ -58,12 +64,12 @@ line as (
 
 proc as (
   
-  select str,tmp.getJsonObjects3(str) as hits,wide
+  select str,(str).length() len,tmp.getJsonObjects3(str) as hits,wide
   from line
 
 )
 
---select (hits)[safe_offset(cast((rand() * array_length(hits)-1) as int))]/*.clip.right(1)*/ from proc;
+--select (hits)[safe_offset(cast((rand() * array_length(hits)-1) as int))].key/*.right(1)*/ from proc;
 --select (hits).array_last().right(2) from proc;
 
 select * from proc
