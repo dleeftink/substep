@@ -17,6 +17,8 @@ create or replace function tmp.layJsonPartials() as (
   
 );
 
+-- value parsing: incurs heavy compute (key,dat,cap)
+
 create or replace table function tmp.mapJsonFragmentTypes(input table <part string, off int>) as ( 
   from input
   |> extend (SUM(LENGTH(part)) OVER (ORDER BY off ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) + 1 ).ifnull(0) idx,
