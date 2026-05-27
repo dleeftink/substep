@@ -24,28 +24,31 @@ create or replace table function tmp.mapJsonFragmentTypes(input table <part stri
   |> where bare is not null
 
   |> extend (bare).rtrim(',') as clip
-  |> extend (clip).rtrim('\t\n\r ').right(1) as tail
+  |> extend length(clip) as size 
+  |> extend (clip).rtrim('\t\n\r ').right(1) as tail --, (clip).right(size - (clip).rtrim('\t\n\r[ {').length()).translate('\t\n\r ','') longtail
   |> extend 
-      (tail) in ('{','}','[',']').if(tail,null) as sym,
-      (clip).regexp_extract(r'^("(?:[^"\\]|\\.)*"\s*:\s*)') as key,
-      (bare).right(1) in (',').if(',',null) as sep
-
-  |> extend (key is not null and sym is null).if((clip).right(length(clip)-length(key)),null) as val
-  |> extend key is null and sym is null and val is null as run
+      (tail) in ('{','}') as obj,
+      (tail) in ('[',']') as arr,
+      (clip).regexp_extract(r'^("(?:[^"\\]|\\.)*"\s*:\s*)') as key, 
+      (bare).right(1) in (',').if(',',null) as sep,
+  
+  |> extend (obj or arr).if(tail,null) as sym,case when obj then 'OBJECT' when arr then 'ARRAY' else 'ENTRY' end cat
+  |> extend (key is not null and sym is null).if((clip).right(size-length(key)),null) as dat
+  |> extend key is null and sym is null and dat is null as run
 
   -- to do: handle sparse arrays consistently
-  |> extend (run).if(length(clip) - (clip).regexp_replace(r'("(?:[^"\\]|\\.)*")|\,', r'\1').length() + 1,null) as len
-  |> set key = (key).rtrim(' :'),val = (run).if(clip,val)
-  |> select * except(off,part,bare,clip,tail,run)
+  |> extend (run).if(length(clip) - (clip).regexp_replace(r'("(?:[^"\\]|\\.)*")|\,', r'\1').length() + 1,null) as cap
+  |> set key = (key).rtrim(': ').replace('""','"undefined"'),dat = (run).if(clip,dat)
+  |> select idx,cat,sym,key,sep,dat,cap
 
 );
+
+create or replace function tmp.getJsonObjectPartials(str string) as ((str).regexp_extract_all(tmp.layJsonPartials()));
 
 create or replace function tmp.getJsonObjects3(str string) as (
 
   array(
-    from unnest (
-      (str).regexp_extract_all(tmp.layJsonPartials())
-    ) part with offset off
+    from unnest(tmp.getJsonObjectPartials(str)) as part with offset off 
     |> call tmp.mapJsonFragmentTypes()
     |> select as struct *
   
@@ -67,18 +70,17 @@ with real as (
 line as (
 
   --select '{"test":[{"a":1},{"b":2}],"transaction":null,"nested":{"id":1,"data":[ ,  0,  "" ,1,  2,   {"":[,  " "  ,  "[]"   ]}]},"arr":[{},7,],"second":[{"test":"ok,ay"} ,, 3,,8 , {} ,, {}],"arr2":[[  "," ],[1]],"arr3":[{    "named" : {    "struct" :   true }}]}' as str, true as wide
-  select '{"mixed":[ 1, 2,3,{"nested": true  } ,{"null":true},, ,,, ,, ,4,5,  ", ", " "  ], "okay":false}' as str,true as wide
+  select '{"objarry":[  {"id":1},{"id":2},[["nested"]],["oi"]],"":[ 1, 2,3,{"nested": true  } ,{"null":true},, ,,, ,, ,4,5,  ", ", " "  ], "okay":false}' as str,true as wide
 ),
 
 proc as (
   
   select str,(str).length() len,tmp.getJsonObjects3(str) as hits,wide
-  from real
-
+  from line
 
 )
 
-select (hits)[safe_offset(cast((rand() * array_length(hits)-1) as int))]/*.right(1)*/ from proc;
---select (hits).array_last().right(2) from proc;
+--select (hits)[safe_offset(cast((rand() * array_length(hits)-1) as int))].dat.right(1) from proc;
+--select (hits).array_last().part from proc;
 
---select hits from proc -- where array_length(hits) > 0
+select * from proc -- where array_length(hits) > 0
