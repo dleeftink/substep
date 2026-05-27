@@ -1,5 +1,3 @@
--- slightly less performant than session(26.05.15)queries(0.3)json(cast)base(shuffle)any.sql
-
 create or replace function tmp.layJsonPartials() as (
 
   -- 1. EXTRACT: Key/Value pairs with optional spacing (assumes spacing and regular JSON escaped double quotes inside string fields)
@@ -104,13 +102,28 @@ create or replace function tmp.getJsonObjects3(str string, pick int) as (
 
 );
 
+
+create or replace table function tmp.mapJsonObjects3(input table< /*schema string,*/str string,sig int /*,rel int,type string*/>, scan bool, dups bool,deep int) as (
+  
+  with shuf as (
+    
+    select sig,(str)/*.to_json_string()*/ str from input 
+    qualify if(not scan,true,if(dups,true = max(true) over(),row_number() over(partition by sig) = 1))
+
+  )
+
+  select sig,tmp.getJsonObjects3(str,deep) levels from shuf
+
+);
+
+
 with real as (
 
-    select (hits).to_json_string(wide) as str,wide from (
+    select hits as blob,(hits).to_json_string(wide) as str,wide from (
       select (hits) from `stack-curves.tables.hits` -- limit 1
       union all
       select (hits) from `stack-curves.tables.hits` -- limit 1
-    ),unnest([false]) as wide qualify true = max(true) over()
+    ),unnest([false]) as wide -- qualify true = max(true) over()
    --  limit 1
   
 ),
@@ -126,9 +139,23 @@ proc as (
   select str,(str).length() len,tmp.getJsonObjects3(str,10) as hits,wide
   from real
 
+),
+
+
+sigs as (
+
+  select tmp.getJsonObjectSignature(blob,typeof(blob)).*
+  from real -- limit 1
+
 )
+
 
 --select (hits)[safe_offset(cast((rand() * array_length(hits)-1) as int))].dat.right(1) from proc;
 --select (hits).array_last().part from proc;
 
-select (hits).array_last().leaf.nodes.array_last() from proc -- where array_length(hits) > 0
+--select (hits).array_last().leaf.nodes.array_last() from proc -- where array_length(hits) > 0
+
+--select (levels).array_last().leaf.nodes.array_last() from tmp.mapJsonObjects3(table sigs,scan=>true,dups=>true,deep=>10)
+
+select sum((select sum(array_length(leaf.nodes)) from unnest(levels)))from tmp.mapJsonObjects3(table sigs,scan=>true,dups=>true,deep=>10)
+--group by sig
