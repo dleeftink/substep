@@ -86,9 +86,9 @@ create or replace function tmp.getJsonObjects3(str string, pick int) as (
     |> extend raise = 2 and type = 'ARRAY' as is_root,raise = 1 and not entry as is_stem,raise = 0 as is_leaf
     |> aggregate
   
-        tmp.getJsonObjectNodes(is_leaf,obj) as leaf,
-        tmp.getJsonObjectNodes(is_stem or depth = 0,obj) as stem, -- always include top-level objects so we don't end up with an empty inner join later
-        tmp.getJsonObjectNodes(is_root /*or depth = 1 */,obj) as root,
+        tmp.getJsonObjectNodes2(is_leaf,obj) as leaf,
+        tmp.getJsonObjectNodes2(is_stem or depth = 0,obj) as stem, -- always include top-level objects so we don't end up with an empty inner join later
+        tmp.getJsonObjectNodes2(is_root /*or depth = 1 */,obj) as root,
   
       group by depth
     
@@ -114,7 +114,7 @@ create or replace table function tmp.mapJsonObjects3(input table< /*schema strin
 
   )
 
-  select sig,tmp.getJsonObjects3(str,deep) levels from shuf
+  select sig,tmp.getJsonObjects3(str,deep,tmp.layJsonPartials()) levels from shuf
 
 );
 
