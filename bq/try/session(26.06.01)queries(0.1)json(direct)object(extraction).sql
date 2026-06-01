@@ -10,8 +10,8 @@ create or replace function tmp.layJsonPartials() as (
   -- 2. EXTRACT: Isolated string values
   --'|' r'"(?:[^"\\]|\\.)*"[\s\,]*'
   -- 2. EXTRACT: Isolated or consecutive string values
-    '|' r'(?:\,\s*)?(?:"(?:[^"\\]|\\.)*"[\s\,]*){3,}'  -- n > 2 sequences
-    '|' r'(?:"(?:[^"\\]|\\.)*"[\s\,]*)' -- n = 1 sequences
+    '|' r'"(?:[^"\\]|\\.)*"[\s\,]*' -- n = 1 sequences
+    '|' /*r'(?:\,\s*)?*/ r'(?:"(?:[^"\\]|\\.)*"[\s\,]*){3,}'  -- n > 2 sequences
   -- 3. CATCH: Pure whitespace blocks (Highly optimized in RE2)
     '|' r'\s+'
   -- 4. CATCH: Any long sequence not containing structural JSON markers
@@ -24,8 +24,8 @@ create or replace function tmp.layJsonPartials() as (
   
 );
 
-create or replace table function tmp.mapJsonFragmentTypes2(input table <part string, off int>) as ( 
-  from input
+create or replace table function tmp.mapJsonFragmentTypes2(/*input table<part string, off int>*/ parts array<string>) as ( 
+  from unnest(parts) part with offset off 
   |> extend LENGTH(part) as len
   |> extend (SUM(len) OVER (ORDER BY off ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) + 1 ).ifnull(0) idx,lag(part) over(order by off) as prev,
   |> extend (part).trim('\t\n\r ').nullif('') bare 
@@ -33,13 +33,13 @@ create or replace table function tmp.mapJsonFragmentTypes2(input table <part str
 
   |> extend (bare).rtrim('\t\n\r ,') as clip
   |> extend (clip).right(1) as tail
-  |> where /*tail is not null and*/ tail not in (':')
+  |> where /*tail is not null and*/ tail != (':')
   
   |> set prev = (prev).rtrim('\t\n\r ').nullif('')
   |> extend 
       (tail) in ('{','}') as obj,
       (tail) in ('[',']') as arr,
-      (bare).right(1) in (',').if(',',null) as sep,
+      (bare).right(1) in (',') as sep,
       (prev).right(1) in (':') as anc
 
   |> extend not (obj or arr) as val,
@@ -67,8 +67,9 @@ create or replace aggregate function tmp.getJsonObjectNodes3(
 create or replace function tmp.getJsonObjects4(str string, rgx string,pick int) as (
 
   array(
-    from unnest((str).regexp_extract_all(rgx)) as part with offset off
-    |> call tmp.mapJsonFragmentTypes2()
+    -- from unnest((str).regexp_extract_all(rgx)) as part with offset off
+    -- |> call tmp.mapJsonFragmentTypes2()
+    from tmp.mapJsonFragmentTypes2((str).regexp_extract_all(rgx))
 
     |> extend sym in ('{','[') as opener, sym in (']','}') as closer,cat in ('ENTRY') as entry
     |> extend if(entry,1,0) as lift 
@@ -100,7 +101,7 @@ create or replace function tmp.getJsonObjects4(str string, rgx string,pick int) 
     -- |> extend range(timestamp_seconds(open),timestamp_seconds(close)) line 
     
     |> extend struct(slot,open,close,head,type,key,data,tail,entry) as obj -- |> as obj
-    |> extend raise = 2 and type = 'ARRAY' as is_root,raise = 1 and not entry as is_stem,raise = 0 as is_leaf
+    |> extend raise = 2 and type = 'ARRAY' as is_root,(raise = 1 and not entry) or depth = 0 as is_stem,raise = 0 as is_leaf
     |> aggregate
   
         tmp.getJsonObjectNodes3(is_leaf,obj) as leaf,
@@ -110,6 +111,7 @@ create or replace function tmp.getJsonObjects4(str string, rgx string,pick int) 
       group by depth
     
     |> where array_length(leaf.nodes) > 0
+    --|> where leaf.nodes[safe_offset(0)] is not null
     -- |> set 
     --     leaf = (select leaf.* |> set bins = GREATEST(1, CAST((closes - opens) / pow(size,0.5) AS INT64)) |> select as struct *),
     --     stem = (select stem.* |> set bins = GREATEST(1, CAST((closes - opens) / pow(size,0.5) AS INT64)) |> select as struct *)
@@ -126,6 +128,15 @@ create or replace table function tmp.mapJsonObjects4(input table< /*schema strin
     
     select sig,(str)/*.to_json_string()*/ str from input 
     qualify if(not scan,true,if(dups,true = max(true) over(),row_number() over(partition by sig) = 1))
+
+  ),
+
+  flat as (
+
+    select * except(strs) from (
+      select * except(str), json_query_array(str,'$') strs 
+      from shuf
+    ) get,get.strs str
 
   )
 
