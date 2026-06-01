@@ -60,7 +60,7 @@ create or replace function tmp.getJsonAncestors(source any type,target any type)
 
 create or replace aggregate function tmp.getJsonObjectNodes(pick bool,obj struct<
   --raise int,depth int,
-    slot int,open int,close int,head string,type string,data string,tail string,entry bool
+    slot int,open int,close int,head string,type string,key string,val string,tail string,entry bool
   --,line range<timestamp>
 >) as (
   struct(
@@ -72,7 +72,7 @@ create or replace aggregate function tmp.getJsonObjectNodes(pick bool,obj struct
 );
 
 create or replace function tmp.layJsonExtractionPattern() as (
-  r'("[^"]*"\s*:\s*(?:"[^"]*"|[\d\.]+|true|false|null|[\[\{])|[\[\]\{\}]|\,\s*?)'
+  r'("[^"]*"\s*:\s*(?:"[^"]*"|[-+\d.eE]+|true|false|null|[\[\{])|"[^"]*"|[^"\,\s\:\[\]\{\}]+|[\[\]\{\}]|\,\s*?)'
 );
 
 create or replace function tmp.layJsonPartials() as (
@@ -139,14 +139,17 @@ create or replace function tmp.getJsonObjects2(str string, pick int,rgx string) 
   |> select 
       raise,depth,slot,head.idx as open,tail.idx + if(head.entry,length(head.item).ifnull(1) - 1 ,0) + 1 as close,
       head.mark head,head.type,head.item as data,tail.mark tail,head.entry 
-     
-  -- |> set data = coalesce(substring(str,open,close-open)/*.left(16).concat('...')*/) -- check if correct index
+
+  |> extend regexp_extract(data,r'((?:[^"\\]|\\.)*"\s*:)\s*') as key
+  |> extend regexp_extract(data,r'(?:[^"\\]|\\.)*"\s*:\s*("[^"]*"|[-+\d.eE]+|true|false|null)') as val
+  
+  -- |> set data = coalesce(substring(str,open,close-open)/*.left(16).concat('...')*/) -- check val correct index
   -- |> set data = if(entry,parse_json(concat('{',(data).replace('\x05',r'\"'),'}')).to_json_string(),null)  -- optionally parse json ...
 
   -- |> extend if(not entry,substring(str,greatest(0,open-1),1),null) as arr_ctx
   -- |> extend range(timestamp_seconds(open),timestamp_seconds(close)) line 
   
-  |> extend struct(slot,open,close,head,type,data,tail,entry) as obj -- |> as obj
+  |> extend struct(slot,open,close,head,type,key, val,tail,entry) as obj -- |> as obj
   |> extend raise = 2 and type = 'ARRAY' as is_root,raise = 1 and not entry as is_stem,raise = 0 as is_leaf
   |> aggregate
 
