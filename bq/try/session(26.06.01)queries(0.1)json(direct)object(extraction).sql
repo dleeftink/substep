@@ -33,7 +33,7 @@ create or replace table function tmp.mapJsonFragmentTypes2(input table <part str
 
   |> extend (bare).rtrim('\t\n\r ,') as clip
   |> extend (clip).right(1) as tail
-  |> where tail is not null and tail not in (':')
+  |> where /*tail is not null and*/ tail not in (':')
   
   |> set prev = (prev).rtrim('\t\n\r ').nullif('')
   |> extend 
