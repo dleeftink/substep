@@ -72,7 +72,7 @@ create or replace aggregate function tmp.getJsonObjectNodes(pick bool,obj struct
 );
 
 create or replace function tmp.layJsonExtractionPattern() as (
-  r'("[^"]*"\s*:\s*(?:"[^"]*"|[-+\d.eE]+|true|false|null|[\[\{])|"[^"]*"|[^"\,\s\:\[\]\{\}]+|[\[\]\{\}]|\,\s*?)'
+  r'("[^"]*"\s*:\s*(?:"[^"]*"|[-+\d.eE]+|true|false|null|[\[\{])|"[^"]*"|[^"\,\s\:\[\]\{\}]+|[\[\]\{\}]|\,\s*?|\s+)'
 );
 
 create or replace function tmp.layJsonPartials() as (
@@ -140,8 +140,11 @@ create or replace function tmp.getJsonObjects2(str string, pick int,rgx string) 
       raise,depth,slot,head.idx as open,tail.idx + if(head.entry,length(head.item).ifnull(1) - 1 ,0) + 1 as close,
       head.mark head,head.type,head.item as data,tail.mark tail,head.entry 
 
-  |> extend regexp_extract(data,r'("(?:[^"\\]|\\.)*"\s*:)\s*') as key
-  |> extend regexp_extract(data,r'"(?:[^"\\]|\\.)*"\s*:\s*("[^"]*"|[-+\d.eE]+|true|false|null)') as val
+  |> extend regexp_extract(data,r'("[^"]*"\s*):\s*') as key
+  |> extend regexp_extract(data,r'"[^"]*"\s*:\s*("[^"]*"|[-+\d.eE]+|true|false|null)') as val
+
+  |> set key = if(not entry and key is null,data,key).replace('\x05\\','\\"'),
+      val = if(entry and val is null,data,val).replace('\x05\\','\\"')
 
   -- |> set data = coalesce(substring(str,open,close-open)/*.left(16).concat('...')*/) -- check val correct index
   -- |> set data = if(entry,parse_json(concat('{',(data).replace('\x05',r'\"'),'}')).to_json_string(),null)  -- optionally parse json ...
