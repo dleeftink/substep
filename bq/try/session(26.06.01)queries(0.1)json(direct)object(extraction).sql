@@ -1,3 +1,6 @@
+-- this version is head-to-head with session(26.05.15)queries(0.3)json(cast)base(shuffle)any.sql
+-- but still a little slower; however we extract long string or value sequences ('runs') as a single datum
+
 create or replace function tmp.layJsonPartials() as (
 
   -- 1. EXTRACT: Key/Value pairs with optional spacing (assumes spacing and regular JSON escaped double quotes inside string fields)
