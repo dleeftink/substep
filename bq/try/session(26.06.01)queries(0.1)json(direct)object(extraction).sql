@@ -115,7 +115,11 @@ create or replace function tmp.getJsonObjects4(str string, rgx string,pick int) 
     |> aggregate min_by(obj,pin) head,max_by(obj,pin) tail group by depth , slot - if(closer,1,0) as slot -- if(entry,item,type) 
     |> set slot = row_number() over(partition by depth order by slot)
     
-    |> left join unnest(generate_array(0,(head.entry or depth >= pick).if(0,2))) raise
+    -- track max depth logic can be improved
+    |> extend max(depth) over() max_depth
+    |> extend least(2, max_depth - depth) as max_raise
+
+    |> left join unnest(generate_array(0,(head.entry or depth >= pick).if(0,max_raise))) raise
     |> set depth = depth + raise
     |> select 
         raise,depth,slot,head.idx as open,tail.idx + if(head.entry,(head.len).ifnull(1) - 1 ,0) + 1 as close,
@@ -141,7 +145,7 @@ create or replace function tmp.getJsonObjects4(str string, rgx string,pick int) 
     
     --|> where array_length(leaf.nodes) > 0
     --|> where leaf.nodes[safe_offset(0)] is not null
-    |> where depth < max(depth) over()
+    -- |> where depth < max(depth) over()
     -- |> set 
     --     leaf = (select leaf.* |> set bins = GREATEST(1, CAST((closes - opens) / pow(size,0.5) AS INT64)) |> select as struct *),
     --     stem = (select stem.* |> set bins = GREATEST(1, CAST((closes - opens) / pow(size,0.5) AS INT64)) |> select as struct *)
