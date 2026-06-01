@@ -1,5 +1,5 @@
--- this version is head-to-head with session(26.05.15)queries(0.3)json(cast)base(shuffle)any.sql
--- but still a little slower; however we extract long string or value sequences ('runs') as a single datum
+-- This version is head-to-head with session(26.05.15)queries(0.3)json(cast)base(shuffle)any.sql
+-- a.k.a. Schema-on-Read with OLAP Performance
 
 create or replace function tmp.layJsonPartials() as (
 
@@ -141,6 +141,10 @@ create or replace function tmp.getJsonObjects4(str string, rgx string,pick int) 
           is_root => (raise = 2 and type = 'ARRAY') -- only grandparent arrays need to be tracked for indexing
         ).*
   
+    --  tmp.getJsonObjectNodes3(/*is_leaf =>*/ (raise = 0),obj) as leaf,
+    --  tmp.getJsonObjectNodes3(/*is_stem =>*/ (raise = 1 and not entry) or depth = 0,obj) as stem, -- always include top-level objects so we don't end up with an empty inner join later
+    --  tmp.getJsonObjectNodes3(/*is_root =>*/ (raise = 2 and type = 'ARRAY'),obj) as root,
+    
       group by depth
     
     --|> where array_length(leaf.nodes) > 0
@@ -149,7 +153,7 @@ create or replace function tmp.getJsonObjects4(str string, rgx string,pick int) 
     -- |> set 
     --     leaf = (select leaf.* |> set bins = GREATEST(1, CAST((closes - opens) / pow(size,0.5) AS INT64)) |> select as struct *),
     --     stem = (select stem.* |> set bins = GREATEST(1, CAST((closes - opens) / pow(size,0.5) AS INT64)) |> select as struct *)
-    
+
     |> select as struct depth,leaf,depth depth_2,stem,depth depth_3,root --,bin
 
   )
