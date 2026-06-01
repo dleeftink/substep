@@ -16,7 +16,7 @@ create or replace function tmp.layJsonPartials() as (
     '|' r'\s+'
   -- 4. CATCH: Any long sequence not containing structural JSON markers
     '|' r'[^\[\]\{\}\"\:]+[\s\,]*'
-  -- 5. CATCH: Individual structural boundaries with trailing comma (note: may match orphan commas if they weren't already subsumed greedily)
+  -- 5. CATCH: Individual structural boundaries with trailing comma
     '|' r'[\}\]\,]\s*\,?'
     '|' r'[\[\{]'
   -- 6. 
@@ -139,8 +139,9 @@ create or replace function tmp.getJsonObjects4(str string, rgx string,pick int) 
   
       group by depth
     
-    |> where array_length(leaf.nodes) > 0
+    --|> where array_length(leaf.nodes) > 0
     --|> where leaf.nodes[safe_offset(0)] is not null
+    |> where depth < max(depth) over()
     -- |> set 
     --     leaf = (select leaf.* |> set bins = GREATEST(1, CAST((closes - opens) / pow(size,0.5) AS INT64)) |> select as struct *),
     --     stem = (select stem.* |> set bins = GREATEST(1, CAST((closes - opens) / pow(size,0.5) AS INT64)) |> select as struct *)
@@ -158,7 +159,7 @@ create or replace table function tmp.mapJsonObjects4(input table< /*schema strin
     select sig,(str)/*.to_json_string()*/ str from input 
     qualify if(not scan,true,if(dups,true = max(true) over(),row_number() over(partition by sig) = 1))
 
-  ),
+  )/*,
 
   flat as (
 
@@ -167,9 +168,12 @@ create or replace table function tmp.mapJsonObjects4(input table< /*schema strin
       from shuf
     ) get,get.strs str
 
-  )
+  )*/
 
-  select str,sig,tmp.getJsonObjects4(str,tmp.layJsonPartials(),deep) levels from shuf
+  select str,sig,tmp.getJsonObjects4(str,
+    tmp.layJsonPartials(),
+    --r'("(?:[^"\\]|\\.)*"\s*:\s*[\[\{]?|"(?:[^"\\]|\\.)*"[\s\,]*|(?:"(?:[^"\\]|\\.)*"[\s\,]*){3,}|\s+|[^\[\]\{\}\"\:]+[\s\,]*|[\}\]\,]\s*\,?|[\[\{])',
+    deep) levels from shuf
 
 );
 
