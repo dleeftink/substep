@@ -138,7 +138,7 @@ create or replace function tmp.getJsonObjects4(str string, rgx string,pick int) 
         tmp.getJsonObjectNodeLists(struct(slot,open,close,head,type,key,data,tail,entry),
           is_leaf => (raise = 0),
           is_stem => (raise = 1 and not entry) or depth = 0, -- always include top-level objects so we don't end up with an empty inner join later
-          is_root => (raise = 2 and type = 'ARRAY')
+          is_root => (raise = 2 and type = 'ARRAY') -- only grandparent arrays need to be tracked for indexing
         ).*
   
       group by depth
