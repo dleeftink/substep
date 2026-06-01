@@ -24,8 +24,8 @@ create or replace function tmp.layJsonPartials() as (
   
 );
 
-create or replace table function tmp.mapJsonFragmentTypes2(/*input table<part string, off int>*/ parts array<string>) as ( 
-  from unnest(parts) part with offset off 
+create or replace table function tmp.mapJsonFragmentTypes2(input table<part string, off int> /* parts array<string>*/) as ( 
+  from input -- unnest(parts) part with offset off 
   |> extend LENGTH(part) as len
   |> extend (SUM(len) OVER (ORDER BY off ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) + 1 ).ifnull(0) idx,lag(part) over(order by off) as prev,
   |> extend (part).trim('\t\n\r ').nullif('') bare 
@@ -33,7 +33,7 @@ create or replace table function tmp.mapJsonFragmentTypes2(/*input table<part st
 
   |> extend (bare).rtrim('\t\n\r ,') as clip
   |> extend (clip).right(1) as tail
-  |> where /*tail is not null and*/ tail != (':')
+  |> where /*tail is not null and*/ tail not in (':')
   
   |> set prev = (prev).rtrim('\t\n\r ').nullif('')
   |> extend 
@@ -94,9 +94,9 @@ create or replace aggregate function tmp.getJsonObjectNodeLists(
 create or replace function tmp.getJsonObjects4(str string, rgx string,pick int) as (
 
   array(
-    -- from unnest((str).regexp_extract_all(rgx)) as part with offset off
-    -- |> call tmp.mapJsonFragmentTypes2()
-    from tmp.mapJsonFragmentTypes2((str).regexp_extract_all(rgx))
+    from unnest((str).regexp_extract_all(rgx)) as part with offset off
+    |> call tmp.mapJsonFragmentTypes2()
+    -- from tmp.mapJsonFragmentTypes2((str).regexp_extract_all(rgx))
 
     |> extend sym in ('{','[') as opener, sym in (']','}') as closer,cat in ('ENTRY') as entry
     |> extend if(entry,1,0) as lift 
@@ -115,7 +115,7 @@ create or replace function tmp.getJsonObjects4(str string, rgx string,pick int) 
     |> aggregate min_by(obj,pin) head,max_by(obj,pin) tail group by depth , slot - if(closer,1,0) as slot -- if(entry,item,type) 
     |> set slot = row_number() over(partition by depth order by slot)
     
-    |> cross join unnest(generate_array(0,(head.entry or depth >= pick).if(0,2))) raise
+    |> left join unnest(generate_array(0,(head.entry or depth >= pick).if(0,2))) raise
     |> set depth = depth + raise
     |> select 
         raise,depth,slot,head.idx as open,tail.idx + if(head.entry,(head.len).ifnull(1) - 1 ,0) + 1 as close,
