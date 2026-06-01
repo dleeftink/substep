@@ -64,6 +64,33 @@ create or replace aggregate function tmp.getJsonObjectNodes3(
   )
 );
 
+create or replace aggregate function tmp.getJsonObjectNodeLists(
+  obj STRUCT<slot INT64, open INT64, close INT64, head STRING, type STRING, key STRING, data STRING, tail STRING, entry BOOL>,
+  is_leaf BOOL,is_stem BOOL,is_root BOOL
+) as (
+  struct(
+    struct(
+      min(if(is_leaf,obj.open,null)) as opens,
+      max(if(is_leaf,obj.close,null)) as closes,
+      array_agg(if(is_leaf,obj,null) ignore nulls /*order by obj.open*/) as nodes,
+      countif(is_leaf) as size
+    ) as leaf,
+    struct(
+      min(if(is_stem,obj.open,null)) as opens,
+      max(if(is_stem,obj.close,null)) as closes,
+      array_agg(if(is_stem,obj,null) ignore nulls /*order by obj.open*/) as nodes,
+      countif(is_stem) as size
+    ) as stem,
+    struct(
+      min(if(is_root,obj.open,null)) as opens,
+      max(if(is_root,obj.close,null)) as closes,
+      array_agg(if(is_root,obj,null) ignore nulls /*order by obj.open*/) as nodes,
+      countif(is_root) as size
+    ) as root
+  )
+);
+
+
 create or replace function tmp.getJsonObjects4(str string, rgx string,pick int) as (
 
   array(
@@ -100,13 +127,15 @@ create or replace function tmp.getJsonObjects4(str string, rgx string,pick int) 
     -- |> extend if(not entry,substring(str,greatest(0,open-1),1),null) as arr_ctx
     -- |> extend range(timestamp_seconds(open),timestamp_seconds(close)) line 
     
-    |> extend struct(slot,open,close,head,type,key,data,tail,entry) as obj -- |> as obj
-    |> extend raise = 2 and type = 'ARRAY' as is_root,(raise = 1 and not entry) or depth = 0 as is_stem,raise = 0 as is_leaf
+    --|> extend struct(slot,open,close,head,type,key,data,tail,entry) as obj -- |> as obj
+    --|> extend raise = 2 and type = 'ARRAY' as is_root,(raise = 1 and not entry) or depth = 0 as is_stem,raise = 0 as is_leaf
     |> aggregate
   
-        tmp.getJsonObjectNodes3(is_leaf,obj) as leaf,
-        tmp.getJsonObjectNodes3(is_stem or depth = 0,obj) as stem, -- always include top-level objects so we don't end up with an empty inner join later
-        tmp.getJsonObjectNodes3(is_root /*or depth = 1 */,obj) as root,
+        tmp.getJsonObjectNodeLists(struct(slot,open,close,head,type,key,data,tail,entry),
+          is_leaf => (raise = 0),
+          is_stem => (raise = 1 and not entry) or depth = 0, -- always include top-level objects so we don't end up with an empty inner join later
+          is_root => (raise = 2 and type = 'ARRAY')
+        ).*
   
       group by depth
     
