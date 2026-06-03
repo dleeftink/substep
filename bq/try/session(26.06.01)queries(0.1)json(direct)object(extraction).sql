@@ -16,6 +16,8 @@ create or replace function tmp.layJsonPartials() as (
     '|' r'\s+'
   -- 4. CATCH: Any long sequence not containing structural JSON markers
     '|' r'[^\[\]\{\}\"\:]+[\s\,]*'
+  -- 4. CATCH: Any sequence of JSON primitives 
+  --'|' r'(?:\b(?:null|true|false|-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?)\b[\s\,]*)+'
   -- 5. CATCH: Individual structural boundaries with trailing comma
     '|' r'[\}\]\,]\s*\,?'
     '|' r'[\[\{]'
