@@ -16,11 +16,11 @@ create or replace function tmp.layJsonPartials() as (
     '|' r'\s+'
   -- 4. CATCH: Any long sequence not containing structural JSON markers
     '|' r'[^\[\]\{\}\"\:]+[\s\,]*'
-  -- 4. CATCH: Any sequence of JSON primitives 
   --'|' r'(?:\b(?:null|true|false|-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?)\b[\s\,]*)+'
   -- 5. CATCH: Individual structural boundaries with trailing comma
     '|' r'[\}\]\,]\s*\,?'
     '|' r'[\[\{]'
+    '|' r'[\"\:]' -- dangling
   -- 6. 
     ')'
   
@@ -29,8 +29,9 @@ create or replace function tmp.layJsonPartials() as (
 create or replace table function tmp.mapJsonFragmentTypes2(input table<part string, off int> /* parts array<string>*/) as ( 
   from input -- unnest(parts) part with offset off 
   |> extend LENGTH(part) as len
-  |> extend (SUM(len) OVER (ORDER BY off ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) + 1 ).ifnull(0) idx,lag(part) over(order by off) as prev,
-  |> extend (part).trim('\t\n\r ').nullif('') bare 
+  |> extend if((part).starts_with('\x1e'),1,0) terminator
+  |> extend (SUM(len) OVER (ORDER BY off ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) + 1 ).ifnull(0) - terminator idx,lag(part) over(order by off) as prev,
+  |> extend if(part in ('"',':'),Error('Dangling [' ||part|| '] at string index: ' ||idx),(part).trim('\t\n\r ').nullif('')) bare 
   --|> where bare is not null
 
   |> extend (bare).rtrim('\t\n\r ,') as clip
@@ -45,7 +46,7 @@ create or replace table function tmp.mapJsonFragmentTypes2(input table<part stri
       (prev).right(1) in (':') as anc
 
   |> extend not (obj or arr) as val,
-  |> extend (not val).if(tail,null) as sym,case when obj then 'OBJECT' when arr then 'ARRAY' else 'ENTRY' end cat
+  |> extend (not val).if(tail,null) as sym,case when obj then 'OBJ' when arr then 'ARR' else 'ENT' end cat
   |> extend val and not anc as run, if(val and anc,prev,null) as key,if(val,bare,null) as dat -- bare for reconstruction / clip for direct json construction
   |> extend (run).if(length(clip) - (clip).regexp_replace(r'("(?:[^"\\]|\\.)*")|\,', r'\1').length() + 1,null) as cap
 
@@ -53,17 +54,6 @@ create or replace table function tmp.mapJsonFragmentTypes2(input table<part stri
   |> set key = if((key).starts_with(""),(key).replace('""','"undefined"'),key)
   |> select idx,cat,sym,key,sep,dat,len,cap
 
-);
-
-create or replace aggregate function tmp.getJsonObjectNodes3(
-  pick BOOL, obj STRUCT<slot INT64, open INT64, close INT64, head STRING, type STRING, key STRING, data STRING, tail STRING, entry BOOL>
-) as (
-  struct(
-    min(if(pick,obj.open,null)) as opens,
-    max(if(pick,obj.close,null)) as closes,
-    array_agg(if(pick,obj,null) ignore nulls /*order by obj.open*/) as nodes,
-    countif(pick) as size
-  )
 );
 
 create or replace aggregate function tmp.getJsonObjectNodeLists(
@@ -96,11 +86,11 @@ create or replace aggregate function tmp.getJsonObjectNodeLists(
 create or replace function tmp.getJsonObjects4(str string, rgx string,pick int) as (
 
   array(
-    from unnest((str).regexp_extract_all(rgx)) as part with offset off
+    from unnest((str||'\x1e').regexp_extract_all(rgx)) as part with offset off
     |> call tmp.mapJsonFragmentTypes2()
     -- from tmp.mapJsonFragmentTypes2((str).regexp_extract_all(rgx))
 
-    |> extend sym in ('{','[') as opener, sym in (']','}') as closer,cat in ('ENTRY') as entry
+    |> extend sym in ('{','[') as opener, sym in (']','}') as closer,cat in ('ENT') as entry
     |> extend if(entry,1,0) as lift 
 
     |> extend lift + sum(case when opener then 1 when closer then -1 else 0 end) over(w1) - 1 as depth
@@ -114,39 +104,31 @@ create or replace function tmp.getJsonObjects4(str string, rgx string,pick int) 
     |> extend row_number() over(partition by depth order by idx) slot 
     |> as obj
   
-    |> aggregate min_by(obj,pin) head,max_by(obj,pin) tail group by depth , slot - if(closer,1,0) as slot -- if(entry,item,type) 
+    |> aggregate countif(cat in ('OBJ','ENT')) = countif(cat = 'ARR') unbalanced,min_by(obj,pin) head,max_by(obj,pin) tail group by depth , slot - if(closer,1,0) as slot -- if(entry,item,type) 
     |> set slot = row_number() over(partition by depth order by slot)
     
-    -- track max depth logic can be improved
     |> extend max(depth) over() max_depth
     |> extend least(2, max_depth - depth) as max_raise
 
     |> left join unnest(generate_array(0,(head.entry or depth >= pick).if(0,max_raise))) raise
     |> set depth = depth + raise
-    |> select 
-        raise,depth,slot,head.idx as open,tail.idx + if(head.entry,(head.len).ifnull(1) - 1 ,0) + 1 as close,
+    /*|> select 
+        objs,arrs,raise,depth,slot,head.idx as open,tail.idx + if(head.entry,(head.len).ifnull(1) - 1 ,0) + 1 as close,
         head.sym head,head.cat type,head.key,head.dat as data,tail.sym tail,head.entry 
        
-    -- |> set data = coalesce(substring(str,open,close-open)/*.left(16).concat('...')*/) -- check if correct index
-    -- |> set data = if(entry,parse_json(concat('{',(data).replace('\x05',r'\"'),'}')).to_json_string(),null)  -- optionally parse json ...
-  
-    -- |> extend if(not entry,substring(str,greatest(0,open-1),1),null) as arr_ctx
+    -- |> extend coalesce(substring(str,open,close-open)) as sub -- check if correct index
     -- |> extend range(timestamp_seconds(open),timestamp_seconds(close)) line 
     
     --|> extend struct(slot,open,close,head,type,key,data,tail,entry) as obj -- |> as obj
-    --|> extend raise = 2 and type = 'ARRAY' as is_root,(raise = 1 and not entry) or depth = 0 as is_stem,raise = 0 as is_leaf
+    --|> extend raise = 2 and type = 'ARR' as is_root,(raise = 1 and not entry) or depth = 0 as is_stem,raise = 0 as is_leaf
     |> aggregate
   
         tmp.getJsonObjectNodeLists(struct(slot,open,close,head,type,key,data,tail,entry),
           is_leaf => (raise = 0),
           is_stem => (raise = 1 and not entry) or depth = 0, -- always include top-level objects so we don't end up with an empty inner join later
-          is_root => (raise = 2 and type = 'ARRAY') -- only grandparent arrays need to be tracked for indexing
+          is_root => (raise = 2 and type = 'ARR') -- only grandparent arrays need to be tracked for indexing
         ).*
   
-    --  tmp.getJsonObjectNodes3(/*is_leaf =>*/ (raise = 0),obj) as leaf,
-    --  tmp.getJsonObjectNodes3(/*is_stem =>*/ (raise = 1 and not entry) or depth = 0,obj) as stem, -- always include top-level objects so we don't end up with an empty inner join later
-    --  tmp.getJsonObjectNodes3(/*is_root =>*/ (raise = 2 and type = 'ARRAY'),obj) as root,
-    
       group by depth
     
     --|> where array_length(leaf.nodes) > 0
@@ -156,7 +138,8 @@ create or replace function tmp.getJsonObjects4(str string, rgx string,pick int) 
     --     leaf = (select leaf.* |> set bins = GREATEST(1, CAST((closes - opens) / pow(size,0.5) AS INT64)) |> select as struct *),
     --     stem = (select stem.* |> set bins = GREATEST(1, CAST((closes - opens) / pow(size,0.5) AS INT64)) |> select as struct *)
 
-    |> select as struct depth,leaf,depth depth_2,stem,depth depth_3,root --,bin
+    |> select as struct depth,leaf,depth depth_2,stem,depth depth_3,root --,bin*/
+    |> select as struct *
 
   )
 
