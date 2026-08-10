@@ -4,7 +4,7 @@ import json
 
 lang_opts = LanguageOptions.maximum_features()
 
-class ParentContextCallGraphExtractor(ASTNodeVisitor):
+class DependencyWalker(ASTNodeVisitor):
     def __init__(self):
         super().__init__()
         self.current_scope = "global"
@@ -115,7 +115,7 @@ CREATE OR REPLACE TABLE FUNCTION custom_namespace.analytical_hub(input TABLE<val
 );
 """, options=lang_opts)
 
-extractor = ParentContextCallGraphExtractor()
+extractor = DependencyWalker()
 for statement_node in sql_payload.statement_list_node.statement_list:
     extractor.visit(statement_node)
 
