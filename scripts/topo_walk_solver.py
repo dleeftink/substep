@@ -107,11 +107,17 @@ CREATE or replace FUNCTION funcs.function_b(inp ANY TYPE) AS ((
 ));
 
 CREATE OR REPLACE TABLE FUNCTION custom_namespace.analytical_hub(input TABLE<val int64>) AS (
-  SELECT * FROM input
-  |> call external_namespace.table_function()
-  |> select (val).(funcs.function_b)() as new_val
-  |> WHERE True
-  |> SELECT funcs.nested_outer( (new_val).(funcs.function_a)().(funcs.function_b)().(funcs.function_c)() )
+  with init as (
+    SELECT * FROM input
+    |> call external_namespace.table_function()
+    |> select (val).(funcs.function_b)() as new_val
+    |> WHERE True
+    |> SELECT 
+        funcs.nested_outer( (new_val).(funcs.function_a)().(funcs.function_b)().(funcs.function_c)() ) out_val,
+        array(select (v).(funcs_function_c)() from unnest(generate_array(0,5)) v) as arr
+  )
+
+  select cast(out_val as string).upper() exit_val, (arr).array_slice(0,2) new_arr from init
 );
 """, options=lang_opts)
 
