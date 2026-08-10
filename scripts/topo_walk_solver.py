@@ -1,105 +1,120 @@
-# The thing won't descend; everything turns up in the global scope
-
 from zetasql.api import Parser, ASTNodeVisitor
 from zetasql.types import LanguageOptions
+import json
 
-# Enable pipe syntax and maximum features
 lang_opts = LanguageOptions.maximum_features()
 
-class DependencyResolverVisitor(ASTNodeVisitor):
+class DynamicFunctionGraphExtractor(ASTNodeVisitor):
     def __init__(self):
         super().__init__()
-        # Stack to keep track of the current scope hierarchy
-        self.scope_stack = ["global"]
-        # Track local definitions (like CTE names) to avoid treating them as external dependencies
-        self.local_identifiers = {"global": set()}
-        # Dependency graph mapping scopes to their dependencies
-        self.dependencies = {"global": set()}
+        self.current_scope = "global"
+        self.graphs = {}
+        # Stores locally encountered calls inside the current active expression block
+        self.expression_call_stack = []
 
-    @property
-    def current_scope(self) -> str:
-        return self.scope_stack[-1]
+    def _dynamically_extract_name(self, node) -> str:
+        if node is None:
+            return ""
 
-    def _register_dependency(self, target_name: str) -> None:
-        """Helper to register that the current scope depends on a target function/table."""
-        # Prevent self-referencing loops and ignore local variables/CTEs
-        if target_name != self.current_scope and target_name not in self.local_identifiers.get(self.current_scope, set()):
-            self.dependencies[self.current_scope].add(target_name)
+        # Strategy 1: Check for explicit name_path/function_path attributes exposed by ZetaSQL-py
+        if getattr(node, "name_path", None):
+            return node.name_path
+        if getattr(node, "function_path", None):
+            return node.function_path
 
-    def _extract_name(self, path_expression_node) -> str:
-        """Safely extracts a dot-separated string from an ASTPathExpression."""
-        if hasattr(path_expression_node, "names"):
-            return ".".join([n.id_string for n in path_expression_node.names if hasattr(n, "id_string")])
+        # Strategy 2: Check for direct identifier strings
+        if getattr(node, "id_string", None):
+            return node.id_string
+        if getattr(node, "image", None):
+            return node.image
+
+        # Strategy 3: Cycle dynamically through standard naming structures
+        for attr_name in ("function_declaration", "function", "name", "method_name"):
+            child = getattr(node, attr_name, None)
+            if child:
+                res = self._dynamically_extract_name(child)
+                if res:
+                    return res
+
+        # Strategy 4: Fallback to token array paths
+        if hasattr(node, "names"):
+            try:
+                segments = [n.id_string for n in node.names if getattr(n, "id_string", None)]
+                if segments:
+                    return ".".join(segments)
+            except Exception:
+                pass
+
         return ""
 
-    def default_visit(self, node) -> None:
-        
+    def visit(self, node) -> None:
+        if node is None:
+            return
+
         node_type = type(node).__name__
-        pushed_scope = False
+        previous_scope = self.current_scope
+        is_scope_defining_node = False
 
-        # 1. Handle Entry into a New Function Scope Definition
-        if node_type in ("ASTCreateFunctionStatement", "ASTCreateTableFunctionStatement"):
-            if hasattr(node, "name"):
-                func_name = self._extract_name(node.name)
-                if func_name:
-                    self.scope_stack.append(func_name)
-                    self.dependencies[func_name] = set()
-                    self.local_identifiers[func_name] = set()
-                    pushed_scope = True
+        # 1. Manage Declaration/Definition Scope Boundaries
+        if "FunctionStatement" in node_type or "TVFStatement" in node_type:
+            is_scope_defining_node = True
+            extracted_scope = self._dynamically_extract_name(node)
+            self.current_scope = extracted_scope if extracted_scope else "unknown_function_definition"
+            if self.current_scope not in self.graphs:
+                self.graphs[self.current_scope] = []
+            
+        # 2. Reset expression tracks at pipeline or statement clause splits
+        is_statement_boundary = node_type in (
+            "ASTSelectStatement", "ASTPipeSelect", "ASTPipeCall", "ASTPipeWhere", "ASTExpressionStatement"
+        )
+        
+        saved_expr_stack = self.expression_call_stack
+        if is_statement_boundary:
+            self.expression_call_stack = []
 
-        # 2. Handle Entry into a Local CTE Context Block
-        elif node_type == "ASTWithClauseEntry":
-            if hasattr(node, "alias") and hasattr(node.alias, "id_string"):
-                cte_name = node.alias.id_string
-                self.local_identifiers.setdefault(self.current_scope, set()).add(cte_name)
-
-        # 3. Handle Active Function Calls (Standard & Dot-Chained)
-        elif node_type in ("ASTFunctionCall", "ASTDotFunctionCall"):
-            if hasattr(node, "function"):
-                func_name = self._extract_name(node.function)
-                if func_name:
-                    self._register_dependency(func_name)
-
-        # 4. Handle Active Table-Valued Function (TVF) Calls
-        elif node_type == "ASTTVF":
-            if hasattr(node, "name"):
-                tvf_name = self._extract_name(node.name)
-                if tvf_name:
-                    self._register_dependency(tvf_name)
-
-        # 5. Descend deeper into the AST tree traversal
+        # 3. Post-Order Traversal (Dig Deep First)
         self.descend(node)
 
-        # 6. Handle Exit from the Function Scope Definition
-        if pushed_scope:
-            self.scope_stack.pop()
+        # 4. Check for targeted call identifiers (Added ASTTVF to catch pipe calls)
+        is_function_call = node_type in (
+            "ASTFunctionCall", 
+            "ASTTableValuedFunctionCall", 
+            "ASTTVFCall", 
+            "ASTTVF", 
+            "ASTTVFArgument", 
+            "ASTDotFunctionCall", 
+            "ASTMethodCall"
+        )
 
-    def display_graph(self) -> None:
-        """Prints a structured view of the dependency graph."""
-        print("\n=== RESOLVED DEPENDENCY GRAPH ===")
-        for scope in sorted(self.dependencies.keys()):
-            deps = self.dependencies[scope]
-            print(f"\n📦 Scope: {scope}")
-            if deps:
-                for dep in sorted(deps):
-                    print(f"  └── ➡️ Depends on: {dep}")
-            else:
-                print("  └── (No external dependencies)")
+        if is_function_call:
+            call_name = self._dynamically_extract_name(node)
+            if call_name:
+                if self.current_scope not in self.graphs:
+                    self.graphs[self.current_scope] = []
+                    
+                if self.expression_call_stack:
+                    child_dependency = self.expression_call_stack[-1]
+                    if child_dependency != call_name:
+                        edge = {"caller": call_name, "callee": child_dependency}
+                        if edge not in self.graphs[self.current_scope]:
+                            self.graphs[self.current_scope].append(edge)
+                else:
+                    edge = {"caller": call_name, "callee": None}
+                    if edge not in self.graphs[self.current_scope]:
+                        self.graphs[self.current_scope].append(edge)
+                
+                self.expression_call_stack.append(call_name)
 
-# Test Execution
+        # 5. Restore stack states when winding upwards out of operations
+        if is_statement_boundary:
+            self.expression_call_stack = saved_expr_stack
+
+        if is_scope_defining_node:
+            self.current_scope = previous_scope
+            self.expression_call_stack = []
+
+# --- Execution using your exact original SQL string with `|> call` ---
 sql_payload = Parser.parse_script_static("""
-with init as (
-  SELECT (user_id).upper().lower(), SUM(revenue)
-  FROM GAP_FILL(TABLE series, microsecond, 1000)
-)
-select * from init;
-
-with next as (
-  FROM GAP_FILL(TABLE series, microsecond, 1000)
-  |> SELECT (user_id).upper().lower(), SUM(revenue)
-)
-select * from next;
-
 CREATE or replace FUNCTION funcs.function_a(inp ANY TYPE) AS ((
   SELECT inp 
 ));
@@ -110,15 +125,18 @@ CREATE or replace FUNCTION funcs.function_b(inp ANY TYPE) AS ((
 
 CREATE OR REPLACE TABLE FUNCTION custom_namespace.analytical_hub(input TABLE<val int64>) AS (
   SELECT * FROM input
+  |> call external_namespace.table_function()
   |> select (val).(funcs.function_b)() as new_val
   |> WHERE True
-  |> SELECT (new_val).function_a()
+  |> SELECT (new_val).(funcs.function_a)().(funcs.function_b)().(funcs.function_c)()
 );
 """, options=lang_opts)
 
-visitor = DependencyResolverVisitor()
-
+extractor = DynamicFunctionGraphExtractor()
 for statement_node in sql_payload.statement_list_node.statement_list:
-    visitor.visit(statement_node)
+    extractor.visit(statement_node)
 
-visitor.display_graph()
+if "global" in extractor.graphs and not extractor.graphs["global"]:
+    del extractor.graphs["global"]
+
+print(json.dumps(extractor.graphs, indent=2))
