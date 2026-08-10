@@ -1,3 +1,5 @@
+# The thing won't descend; everything turns up in the global scope
+
 from zetasql.api import Parser, ASTNodeVisitor
 from zetasql.types import LanguageOptions
 
@@ -7,11 +9,11 @@ lang_opts = LanguageOptions.maximum_features()
 class DependencyResolverVisitor(ASTNodeVisitor):
     def __init__(self):
         super().__init__()
-        # Stack to keep track of the current scope hierarchy (e.g., ['global', 'funcs.function_b'])
+        # Stack to keep track of the current scope hierarchy
         self.scope_stack = ["global"]
-        # Track local variables/CTEs within the current context to avoid flagging them as external dependencies
+        # Track local definitions (like CTE names) to avoid treating them as external dependencies
         self.local_identifiers = {"global": set()}
-        # Dependency graph: maps a scope to a set of entities it depends on
+        # Dependency graph mapping scopes to their dependencies
         self.dependencies = {"global": set()}
 
     @property
@@ -20,7 +22,7 @@ class DependencyResolverVisitor(ASTNodeVisitor):
 
     def _register_dependency(self, target_name: str) -> None:
         """Helper to register that the current scope depends on a target function/table."""
-        # Avoid self-referencing loops and skip locally declared identifiers (like CTEs)
+        # Prevent self-referencing loops and ignore local variables/CTEs
         if target_name != self.current_scope and target_name not in self.local_identifiers.get(self.current_scope, set()):
             self.dependencies[self.current_scope].add(target_name)
 
@@ -30,54 +32,45 @@ class DependencyResolverVisitor(ASTNodeVisitor):
             return ".".join([n.id_string for n in path_expression_node.names if hasattr(n, "id_string")])
         return ""
 
-    def visit(self, node):
-        """
-        Intercepts the visitor lifecycle to handle dynamic scopes cleanly 
-        without breaking the underlying C++ traversal engine.
-        """
-        pushed_scope = False
+    def default_visit(self, node) -> None:
         
-        # Check node type string to safely match underlying zetasql nodes
         node_type = type(node).__name__
+        pushed_scope = False
 
-        if node_type == "ASTCreateFunctionStatement":
+        # 1. Handle Entry into a New Function Scope Definition
+        if node_type in ("ASTCreateFunctionStatement", "ASTCreateTableFunctionStatement"):
             if hasattr(node, "name"):
                 func_name = self._extract_name(node.name)
-                self.scope_stack.append(func_name)
-                self.dependencies[func_name] = set()
-                self.local_identifiers[func_name] = set()
-                pushed_scope = True
+                if func_name:
+                    self.scope_stack.append(func_name)
+                    self.dependencies[func_name] = set()
+                    self.local_identifiers[func_name] = set()
+                    pushed_scope = True
 
-        elif node_type == "ASTCreateTableFunctionStatement":
-            if hasattr(node, "name"):
-                tvf_name = self._extract_name(node.name)
-                self.scope_stack.append(tvf_name)
-                self.dependencies[tvf_name] = set()
-                self.local_identifiers[tvf_name] = set()
-                pushed_scope = True
-
+        # 2. Handle Entry into a Local CTE Context Block
         elif node_type == "ASTWithClauseEntry":
             if hasattr(node, "alias") and hasattr(node.alias, "id_string"):
                 cte_name = node.alias.id_string
-                # Add CTE to local definitions for the immediate scope parent
                 self.local_identifiers.setdefault(self.current_scope, set()).add(cte_name)
 
-        elif node_type == "ASTFunctionCall":
+        # 3. Handle Active Function Calls (Standard & Dot-Chained)
+        elif node_type in ("ASTFunctionCall", "ASTDotFunctionCall"):
             if hasattr(node, "function"):
                 func_name = self._extract_name(node.function)
                 if func_name:
                     self._register_dependency(func_name)
 
+        # 4. Handle Active Table-Valued Function (TVF) Calls
         elif node_type == "ASTTVF":
             if hasattr(node, "name"):
                 tvf_name = self._extract_name(node.name)
                 if tvf_name:
                     self._register_dependency(tvf_name)
 
-        # Delegate continuous depth-first traversal to Python-ZetaSQL runtime engine
-        super().visit(node)
+        # 5. Descend deeper into the AST tree traversal
+        self.descend(node)
 
-        # Clean up scope stack context on node exit
+        # 6. Handle Exit from the Function Scope Definition
         if pushed_scope:
             self.scope_stack.pop()
 
@@ -86,13 +79,12 @@ class DependencyResolverVisitor(ASTNodeVisitor):
         print("\n=== RESOLVED DEPENDENCY GRAPH ===")
         for scope in sorted(self.dependencies.keys()):
             deps = self.dependencies[scope]
-            if deps or scope != "global":  # Ensure we show all function definitions even if they have 0 dependencies
-                print(f"\n📦 Scope: {scope}")
-                if deps:
-                    for dep in sorted(deps):
-                        print(f"  └── ➡️ Depends on: {dep}")
-                else:
-                    print("  └── (No external dependencies)")
+            print(f"\n📦 Scope: {scope}")
+            if deps:
+                for dep in sorted(deps):
+                    print(f"  └── ➡️ Depends on: {dep}")
+            else:
+                print("  └── (No external dependencies)")
 
 # Test Execution
 sql_payload = Parser.parse_script_static("""
