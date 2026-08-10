@@ -147,11 +147,24 @@ class FunctionFilterVisitor(ASTNodeVisitor):
         self.descend(node)
 
 # 3. Use parse_statement (not parse_statement_static) and pass the options
-stmt = Parser.parse_statement_static("""
-    SELECT (user_id).upper().lower(), SUM(revenue)
-    FROM GAP_FILL(TABLE series, microsecond, 1000)
+script_node = Parser.parse_script_static("""
+    with init as (
+      SELECT (user_id).upper().lower(), SUM(revenue)
+      FROM GAP_FILL(TABLE series, microsecond, 1000)
+    )
+    select * from init;
+
+    with next as (
+      FROM GAP_FILL(TABLE series, microsecond, 1000)
+      |> SELECT (user_id).upper().lower(), SUM(revenue)
+    )
+
+    select * from next;
 """, options=lang_opts)
 
 # Visit and execute
-visitor = ASTDump()
-visitor.visit(stmt)
+visitor = FunctionFilterVisitor()
+# visitor.visit(script_node)
+
+for statement_node in script_node.statement_list_node.statement_list:
+    visitor.visit(statement_node)
