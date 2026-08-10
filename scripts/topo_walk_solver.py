@@ -30,8 +30,9 @@ class DependencyResolverVisitor(ASTNodeVisitor):
 
     def visit_ASTCreateFunctionStatement(self, node) -> None:
         """Tracks the creation of scalar and aggregate User-Defined Functions."""
-        func_name = self._extract_name(node.name)
-        if func_name:
+        if hasattr(node, "name"): 
+            func_name = self._extract_name(node.name)
+        # if func_name:
             # Push new scope
             self.scope_stack.append(func_name)
             self.dependencies[func_name] = set()
@@ -46,8 +47,9 @@ class DependencyResolverVisitor(ASTNodeVisitor):
 
     def visit_ASTCreateTableFunctionStatement(self, node) -> None:
         """Tracks the creation of Table-Valued Functions (TVFs)."""
-        tvf_name = self._extract_name(node.name)
-        if tvf_name:
+        if hasattr(node, "name"):
+            tvf_name = self._extract_name(node.name)
+        # if tvf_name:
             self.scope_stack.append(tvf_name)
             self.dependencies[tvf_name] = set()
             self.descend(node)
