@@ -170,6 +170,7 @@ CREATE or replace FUNCTION funcs.function_b(inp ANY TYPE) AS ((
 
 CREATE OR REPLACE TABLE FUNCTION custom_namespace.analytical_hub(input TABLE<val int64>) AS (
   SELECT * FROM input
+  |> call external_namespace.table_function() 
   |> select (val).(funcs.function_b)() as new_val
   |> WHERE True
   |> SELECT (new_val).function_a()
@@ -177,7 +178,7 @@ CREATE OR REPLACE TABLE FUNCTION custom_namespace.analytical_hub(input TABLE<val
 """, options=lang_opts)
 
 # Visit and execute
-visitor = FunctionFilterVisitor()
+visitor = ASTDump()
 # visitor.visit(script_node)
 
 for statement_node in sql_payload.statement_list_node.statement_list:
