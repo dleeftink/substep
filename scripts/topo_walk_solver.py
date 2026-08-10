@@ -95,10 +95,11 @@ class ParentContextCallGraphExtractor(ASTNodeVisitor):
             self.current_scope = previous_scope
 
 
-# --- Complex Edge Verification Payload (Combined Dot Chains + Standard Nesting) ---
+# Complex Edge Verification Payload (Combined Dot Chains + Standard Nesting) 
+# Also adds a circular dependency for later handling
 sql_payload = Parser.parse_script_static("""
 CREATE or replace FUNCTION funcs.function_a(inp ANY TYPE) AS ((
-  SELECT inp 
+  SELECT (inp).(funcs.function_b)() 
 ));
 
 CREATE or replace FUNCTION funcs.function_b(inp ANY TYPE) AS ((
