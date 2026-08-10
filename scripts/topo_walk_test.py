@@ -147,24 +147,38 @@ class FunctionFilterVisitor(ASTNodeVisitor):
         self.descend(node)
 
 # 3. Use parse_statement (not parse_statement_static) and pass the options
-script_node = Parser.parse_script_static("""
-    with init as (
-      SELECT (user_id).upper().lower(), SUM(revenue)
-      FROM GAP_FILL(TABLE series, microsecond, 1000)
-    )
-    select * from init;
+sql_payload = Parser.parse_script_static("""
+with init as (
+  SELECT (user_id).upper().lower(), SUM(revenue)
+  FROM GAP_FILL(TABLE series, microsecond, 1000)
+)
+select * from init;
 
-    with next as (
-      FROM GAP_FILL(TABLE series, microsecond, 1000)
-      |> SELECT (user_id).upper().lower(), SUM(revenue)
-    )
+with next as (
+  FROM GAP_FILL(TABLE series, microsecond, 1000)
+  |> SELECT (user_id).upper().lower(), SUM(revenue)
+)
+select * from next;
 
-    select * from next;
+CREATE or replace FUNCTION funcs.function_a(inp ANY TYPE) AS ((
+  SELECT inp 
+));
+
+CREATE or replace FUNCTION funcs.function_b(inp ANY TYPE) AS ((
+  SELECT (inp).(funcs.function_a)()
+));
+
+CREATE OR REPLACE TABLE FUNCTION custom_namespace.analytical_hub(input TABLE<val int64>) AS (
+  SELECT * FROM input
+  |> select (val).(funcs.function_b)() as new_val
+  |> WHERE True
+  |> SELECT (new_val).function_a()
+);
 """, options=lang_opts)
 
 # Visit and execute
 visitor = FunctionFilterVisitor()
 # visitor.visit(script_node)
 
-for statement_node in script_node.statement_list_node.statement_list:
+for statement_node in sql_payload.statement_list_node.statement_list:
     visitor.visit(statement_node)
