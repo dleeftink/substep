@@ -9,8 +9,12 @@ class DependencyWalker(ASTNodeVisitor):
         super().__init__()
         self.current_scope = "global"
         self.graphs = {}
-        # Keeps track of the active operational parent function call node
         self.current_parent_call = None
+        # Track hierarchical structural expressions (CTEs, Subqueries, Pipe statements)
+        self.context_stack = []
+
+    def _get_current_context(self) -> str:
+        return self.context_stack[-1] if self.context_stack else "statement_body"
 
     def _dynamically_extract_name(self, node) -> str:
         if node is None:
@@ -24,7 +28,12 @@ class DependencyWalker(ASTNodeVisitor):
         if getattr(node, "image", None):
             return node.image
 
-        for attr_name in ("function_declaration", "function", "name", "method_name"):
+        # Capture target type name for CAST expressions
+        if type(node).__name__ == "ASTType":
+            if hasattr(node, "type_name") and getattr(node.type_name, "names", None):
+                return ".".join([n.id_string for n in node.type_name.names if getattr(n, "id_string", None)])
+
+        for attr_name in ("function_declaration", "function", "name", "method_name", "type"):
             child = getattr(node, attr_name, None)
             if child:
                 res = self._dynamically_extract_name(child)
@@ -47,8 +56,9 @@ class DependencyWalker(ASTNodeVisitor):
         node_type = type(node).__name__
         previous_scope = self.current_scope
         is_scope_defining_node = False
+        context_pushed = False
 
-        # 1. Scope Tracking
+        # 1. Scope Tracking (Functions / TVFs)
         if "FunctionStatement" in node_type or "TVFStatement" in node_type:
             is_scope_defining_node = True
             extracted_scope = self._dynamically_extract_name(node)
@@ -56,47 +66,75 @@ class DependencyWalker(ASTNodeVisitor):
             if self.current_scope not in self.graphs:
                 self.graphs[self.current_scope] = []
 
-        # 2. Identify if this specific node represents a function call
+        # 2. Structural/Block Segmentation (CTEs, Subqueries, Pipes)
+        if "WithClauseEntry" in node_type:
+            cte_name = getattr(getattr(node, "alias", None), "id_string", "unknown_cte")
+            self.context_stack.append(f"cte:{cte_name}")
+            context_pushed = True
+        elif "PipeSelect" in node_type or "PipeCall" in node_type:
+            self.context_stack.append("pipe_operator_transform")
+            context_pushed = True
+        elif "ExpressionSubquery" in node_type:
+            self.context_stack.append("inline_subquery")
+            context_pushed = True
+
+        # 3. Identify function calls and Casts
         is_function_call = node_type in (
             "ASTFunctionCall", "ASTTableValuedFunctionCall", "ASTTVFCall", 
             "ASTTVF", "ASTTVFArgument", "ASTDotFunctionCall", "ASTMethodCall"
         )
+        
+        is_cast = (node_type == "ASTCastExpression")
 
         saved_parent_call = self.current_parent_call
 
-        if is_function_call:
-            call_name = self._dynamically_extract_name(node)
+        if is_function_call or is_cast:
+            if is_cast:
+                target_type = self._dynamically_extract_name(node)
+                call_name = f"cast_to_{target_type.lower()}" if target_type else "cast"
+            else:
+                call_name = self._dynamically_extract_name(node)
+
             if call_name:
                 if self.current_scope not in self.graphs:
                     self.graphs[self.current_scope] = []
 
-                # LINEAGE LINKAGE: If a parent call frame exists above us,
-                # then this current node is a nested sub-dependency (callee) of that parent
+                # Embed structural context directly into the extraction lineage metadata
+                current_ctx = self._get_current_context()
+
                 if self.current_parent_call and self.current_parent_call != call_name:
-                    edge = {"caller": self.current_parent_call, "callee": call_name}
+                    edge = {
+                        "caller": self.current_parent_call, 
+                        "callee": call_name,
+                        "context": current_ctx
+                    }
                     if edge not in self.graphs[self.current_scope]:
                         self.graphs[self.current_scope].append(edge)
                 else:
-                    # Root level call inside this expression scope block
-                    edge = {"caller": call_name, "callee": None}
+                    edge = {
+                        "caller": call_name, 
+                        "callee": None,
+                        "context": current_ctx
+                    }
                     if edge not in self.graphs[self.current_scope]:
                         self.graphs[self.current_scope].append(edge)
 
-                # Set this function as the active parent context for any child nodes beneath it
                 self.current_parent_call = call_name
 
-        # 3. Structural Traversal (Pre-order frame propagation, bottom-up resolution)
+        # 4. Descend down AST
         self.descend(node)
 
-        # 4. Clean up state variables on exit
+        # 5. Cleanup Node State On Exit
         self.current_parent_call = saved_parent_call
+
+        if context_pushed:
+            self.context_stack.pop()
 
         if is_scope_defining_node:
             self.current_scope = previous_scope
 
 
-# Complex Edge Verification Payload (Combined Dot Chains + Standard Nesting) 
-# Also adds a circular dependency for later handling
+# Complex Edge Verification Payload
 sql_payload = Parser.parse_script_static("""
 CREATE or replace FUNCTION funcs.function_a(inp ANY TYPE) AS ((
   SELECT (inp).(funcs.function_b)() 
