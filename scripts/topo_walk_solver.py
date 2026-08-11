@@ -10,52 +10,49 @@ class DependencyWalker(ASTNodeVisitor):
         self.current_scope = "global"
         self.graphs = {}
         self.current_parent_call = None
-        
-        # Context handling & Unique ID Generation
         self.context_stack = []
         self.context_counters = {}
 
     def _generate_unique_context(self, base_name: str) -> str:
-        """Generates a uniquely identifiable context label (e.g., inline_subquery#1)."""
-        if base_name not in self.context_counters:
-            self.context_counters[base_name] = 0
-        self.context_counters[base_name] += 1
+        """Generates a uniquely identifiable context label."""
+        self.context_counters[base_name] = self.context_counters.get(base_name, 0) + 1
         return f"{base_name}#{self.context_counters[base_name]}"
 
     def _get_current_context(self) -> str:
         return self.context_stack[-1] if self.context_stack else "statement_body"
 
     def _dynamically_extract_name(self, node) -> str:
+        """Safely extracts identifiers and nested paths from AST nodes without deep recursion."""
         if node is None:
             return ""
-        if getattr(node, "name_path", None):
-            return node.name_path
-        if getattr(node, "function_path", None):
-            return node.function_path
-        if getattr(node, "id_string", None):
-            return node.id_string
-        if getattr(node, "image", None):
-            return node.image
 
-        # Handle explicit Type specifications (e.g., for CAST statements)
-        if type(node).__name__ == "ASTType":
-            if hasattr(node, "type_name") and getattr(node.type_name, "names", None):
-                return ".".join([n.id_string for n in node.type_name.names if getattr(n, "id_string", None)])
+        # Direct explicit lookups
+        for attr in ("name_path", "function_path", "id_string", "image"):
+            val = getattr(node, attr, None)
+            if val:
+                return str(val)
 
-        for attr_name in ("function_declaration", "function", "name", "method_name", "type"):
-            child = getattr(node, attr_name, None)
+        # Handle explicit Type specifications or structural lists (e.g. ASTType, ASTPathExpression)
+        for attr in ("names", "type_name"):
+            nested = getattr(node, attr, None)
+            if nested:
+                if hasattr(nested, "names"):  # Handle nested type paths
+                    nested = nested.names
+                try:
+                    segments = [n.id_string for n in nested if getattr(n, "id_string", None)]
+                    if segments:
+                        return ".".join(segments)
+                except Exception:
+                    pass
+
+        # Clean, explicit bubble-up attributes instead of an open loop
+        for bubble_attr in ("function_declaration", "function", "name", "method_name", "type"):
+            child = getattr(node, bubble_attr, None)
             if child:
                 res = self._dynamically_extract_name(child)
                 if res:
                     return res
-
-        if hasattr(node, "names"):
-            try:
-                segments = [n.id_string for n in node.names if getattr(n, "id_string", None)]
-                if segments:
-                    return ".".join(segments)
-            except Exception:
-                pass
+                
         return ""
 
     def visit(self, node) -> None:
