@@ -30,7 +30,7 @@ class DependencyWalker(ASTNodeVisitor):
                 "ASTTVF", "ASTTVFArgument", "ASTDotFunctionCall", "ASTMethodCall",
                 "ASTAnalyticFunctionCall"
             )},
-            # "ASTCastExpression": lambda n: f"cast_to_{self._dynamically_extract_name(n).lower()}" if self._dynamically_extract_name(n) else "cast",
+            "ASTCastExpression": lambda n: f"cast_to_{self._dynamically_extract_name(n).lower()}" if self._dynamically_extract_name(n) else "cast",
             # "ASTExtractExpression": lambda n: "extract",
             # "ASTCaseValueExpression": lambda n: "case_statement",
             # "ASTCaseNoValueExpression": lambda n: "case_statement"
