@@ -15,16 +15,18 @@ class GraphBuilder(ASTNodeVisitor):
         self.stack = []
 
     def _extract_name(self, node) -> str:
-        """Consistently extracts named tokens from any node type."""
+        """Consistently extracts named tokens from ZetaSQL AST Nodes."""
+        if not node:
+            return ""
         if hasattr(node, "id_string") and node.id_string:
             return node.id_string
-        
         if hasattr(node, "names") and node.names:
             return ".".join([n.id_string for n in node.names if hasattr(n, "id_string")])
-        
         if hasattr(node, "name") and hasattr(node.name, "id_string"):
             return node.name.id_string
-
+        # Check child paths for ASTPathExpression wrappers
+        if hasattr(node, "path_expression"):
+            return self._extract_name(node.path_expression)
         return ""
 
     def default_visit(self, node) -> None:
