@@ -1,5 +1,6 @@
 from zetasql.api import Parser, ASTNodeVisitor
 from zetasql.types import LanguageOptions
+from topo_walk_utils import print_tree
 
 # 1. Enable pipe syntax and maximum features
 lang_opts = LanguageOptions.maximum_features()
@@ -52,38 +53,29 @@ class GraphBuilder(ASTNodeVisitor):
         # Pop back out to the parent level
         self.current_node = self.stack.pop()
 
-# 3. Dedicated clean tree rendering utility
-def print_file_tree(node: dict, prefixes: list[bool] = None) -> None:
-    """Recursively formats a graph dictionary into a clean CLI file tree."""
-    if prefixes is None:
-        prefixes = []
-
-    # Format the current node layout
-    indent = ""
-    for is_last in prefixes[:-1]:
-        indent += "    " if is_last else "│   "
-
-    if prefixes:
-        connector = "└── " if prefixes[-1] else "├── "
-        print(f"{indent}{connector}{node['label']}")
-    else:
-        print(node["label"])
-
-    # Traversal lookahead for child boundaries
-    children = node["children"]
-    child_count = len(children)
-    
-    for index, child in enumerate(children):
-        is_last_child = (index == child_count - 1)
-        print_file_tree(child, prefixes + [is_last_child])
-
 # 4. Parse script using maximum features language options
 sql_payload = Parser.parse_script_static("""
-with init as (
-  SELECT (user_id).upper().lower(), SUM(revenue)
-  FROM GAP_FILL(TABLE series, microsecond, 1000)
-)
-select * from init;
+CREATE or replace FUNCTION funcs.function_a(inp ANY TYPE) AS ((
+  SELECT (inp).(funcs.function_b)() 
+));
+
+CREATE or replace FUNCTION funcs.function_b(inp ANY TYPE) AS ((
+  SELECT (inp).(funcs.function_a)()
+));
+
+CREATE OR REPLACE TABLE FUNCTION custom_namespace.analytical_hub(input TABLE<val int64>) AS (
+  with init as (
+    SELECT * FROM input
+    |> call external_namespace.table_function()
+    |> select (val).(funcs.function_b)() as new_val
+    |> WHERE True
+    |> SELECT 
+        funcs.nested_outer( (new_val).(funcs.function_a)().(funcs.function_b)().(funcs.function_c)() ) out_val,
+        array(select (v).(funcs.function_c)() from unnest(generate_array(0,5)) v) as arr
+  )
+
+  select cast(out_val as string).upper() exit_val, (arr).array_slice(0,2) new_arr from init
+);
 """, options=lang_opts)
 
 # Execute visitor pass to build the graph
@@ -93,4 +85,4 @@ for statement_node in sql_payload.statement_list_node.statement_list:
 
 # Print out our built tree structures
 for built_tree in builder.current_node["children"]:
-    print_file_tree(built_tree)
+    print_tree(built_tree)
