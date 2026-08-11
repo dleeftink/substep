@@ -13,13 +13,32 @@ class DependencyWalker(ASTNodeVisitor):
         self.context_stack = []
         self.context_counters = {}
 
-    def _generate_unique_context(self, base_name: str) -> str:
-        """Generates a uniquely identifiable context label."""
-        self.context_counters[base_name] = self.context_counters.get(base_name, 0) + 1
-        return f"{base_name}#{self.context_counters[base_name]}"
+        # 1. High-level Strategy Configuration
+        self.STRATEGY_MAP = {
+            "is_scope": lambda name, node: "Statement" in name or name.startswith("ASTCreate"),
+            "is_context": lambda name, node: any([
+                name.startswith("ASTPipe"), 
+                "Subquery" in name, 
+                "WithClauseEntry" in name,
+                hasattr(node, "query")  # Structural signature of an isolated execution block
+            ])
+        }
 
-    def _get_current_context(self) -> str:
-        return self.context_stack[-1] if self.context_stack else "statement_body"
+        self.OPERATION_PROCESSORS = {
+            **{node: self._dynamically_extract_name  for node in (
+                "ASTFunctionCall", "ASTTableValuedFunctionCall", "ASTTVFCall", 
+                "ASTTVF", "ASTTVFArgument", "ASTDotFunctionCall", "ASTMethodCall",
+                "ASTAnalyticFunctionCall"
+            )},
+            # "ASTCastExpression": lambda n: f"cast_to_{self._dynamically_extract_name(n).lower()}" if self._dynamically_extract_name(n) else "cast",
+            # "ASTExtractExpression": lambda n: "extract",
+            # "ASTCaseValueExpression": lambda n: "case_statement",
+            # "ASTCaseNoValueExpression": lambda n: "case_statement"
+            # "ASTCoalesceExpression": lambda n: "coalesce",
+            # "ASTInExpression": lambda n: "in_membership",
+            # "ASTLikeExpression": lambda n: "like_pattern",
+            # "ASTBetweenExpression": lambda n: "between_range"
+        }
 
     def _dynamically_extract_name(self, node) -> str:
         """Safely extracts identifiers and nested paths from AST nodes without deep recursion."""
@@ -55,107 +74,69 @@ class DependencyWalker(ASTNodeVisitor):
                 
         return ""
 
+    def _generate_unique_context(self, base_name: str) -> str:
+        # Normalise class names to clean label tokens (e.g., ASTPipeSelect -> pipe_select)
+        token = base_name.replace("AST", "").lower()
+        self.context_counters[token] = self.context_counters.get(token, 0) + 1
+        return f"{token}#{self.context_counters[token]}"
+
+    def _get_current_context(self) -> str:
+        return self.context_stack[-1] if self.context_stack else "statement_body"
+
+    def _resolve_context_label(self, node_type: str, node) -> str:
+        """Dynamically derives contextual labels without hardcoding strings."""
+        if "WithClauseEntry" in node_type:
+            cte_name = getattr(getattr(node, "alias", None), "id_string", "unknown_cte")
+            return f"cte:{cte_name}"
+        return node_type
+
     def visit(self, node) -> None:
         if node is None:
             return
 
         node_type = type(node).__name__
         previous_scope = self.current_scope
-        is_scope_defining_node = False
         context_pushed = False
+        is_scope_defining_node = False
+        saved_parent_call = self.current_parent_call
 
-        # 1. Scope Boundaries (UDFs / TVFs)
-        if "FunctionStatement" in node_type or "TVFStatement" in node_type:
+        # 1. Structural Reflection Boundary Check
+        if self.STRATEGY_MAP["is_scope"](node_type, node):
             is_scope_defining_node = True
             extracted_scope = self._dynamically_extract_name(node)
             self.current_scope = extracted_scope if extracted_scope else "unknown_function"
-            if self.current_scope not in self.graphs:
-                self.graphs[self.current_scope] = []
 
-        # 2. Unique Structural Block Scoping
-        if "WithClauseEntry" in node_type:
-            cte_name = getattr(getattr(node, "alias", None), "id_string", "unknown_cte")
-            unique_ctx = self._generate_unique_context(f"cte:{cte_name}")
-            self.context_stack.append(unique_ctx)
-            context_pushed = True
-        elif "PipeSelect" in node_type or "PipeCall" in node_type:
-            unique_ctx = self._generate_unique_context("pipe_transform")
-            self.context_stack.append(unique_ctx)
-            context_pushed = True
-        elif "ExpressionSubquery" in node_type:
-            unique_ctx = self._generate_unique_context("inline_subquery")
-            self.context_stack.append(unique_ctx)
+        if self.STRATEGY_MAP["is_context"](node_type, node):
+            label_base = self._resolve_context_label(node_type, node)
+            self.context_stack.append(self._generate_unique_context(label_base))
             context_pushed = True
 
-        # 3. Identify standard function calls and special built-in operational nodes
-        is_standard_call = node_type in (
-            "ASTFunctionCall", "ASTTableValuedFunctionCall", "ASTTVFCall", 
-            "ASTTVF", "ASTTVFArgument", "ASTDotFunctionCall", "ASTMethodCall",
-            "ASTAnalyticFunctionCall" # Added Window/Analytic functions
-        )
-        
-        # Explicit mapping for syntax-isolated keywords 
-        special_operation_map = {
-            # "ASTCastExpression": "cast",
-            # "ASTExtractExpression": "extract",
-            # "ASTCaseValueExpression": "case_statement",
-            # "ASTCaseNoValueExpression": "case_statement",
-            # "ASTCoalesceExpression": "coalesce",
-            # "ASTInExpression": "in_membership",
-            # "ASTLikeExpression": "like_pattern",
-            # "ASTBetweenExpression": "between_range"
-        }
-
-        is_special_op = node_type in special_operation_map
-        saved_parent_call = self.current_parent_call
-
-        if is_standard_call or is_special_op:
-            if is_special_op:
-                base_op = special_operation_map[node_type]
-                if base_op == "cast":
-                    target_type = self._dynamically_extract_name(node)
-                    call_name = f"cast_to_{target_type.lower()}" if target_type else "cast"
-                else:
-                    call_name = base_op
-            else:
-                call_name = self._dynamically_extract_name(node)
-
+        # 2. Process Operations
+        if node_type in self.OPERATION_PROCESSORS:
+            call_name = self.OPERATION_PROCESSORS[node_type](node)
             if call_name:
-                if self.current_scope not in self.graphs:
-                    self.graphs[self.current_scope] = []
-
+                self.graphs.setdefault(self.current_scope, [])
                 current_ctx = self._get_current_context()
 
-                if self.current_parent_call and self.current_parent_call != call_name:
-                    edge = {
-                        "caller": self.current_parent_call, 
-                        "callee": call_name,
-                        "context": current_ctx
-                    }
-                    if edge not in self.graphs[self.current_scope]:
-                        self.graphs[self.current_scope].append(edge)
-                else:
-                    edge = {
-                        "caller": call_name, 
-                        "callee": None, 
-                        "context": current_ctx
-                    }
-                    if edge not in self.graphs[self.current_scope]:
-                        self.graphs[self.current_scope].append(edge)
-
+                edge = {
+                    "caller": self.current_parent_call if (self.current_parent_call and self.current_parent_call != call_name) else call_name,
+                    "callee": call_name if (self.current_parent_call and self.current_parent_call != call_name) else None,
+                    "context": current_ctx
+                }
+                if edge not in self.graphs[self.current_scope]:
+                    self.graphs[self.current_scope].append(edge)
                 self.current_parent_call = call_name
 
-        # 4. Traversal
+        # 3. Traversal and Cleanup
         self.descend(node)
-
-        # 5. Clean up frames
         self.current_parent_call = saved_parent_call
         if context_pushed:
             self.context_stack.pop()
         if is_scope_defining_node:
             self.current_scope = previous_scope
 
-# Verification execution with a multi-subquery environment
+
+# Verification execution
 sql_payload = Parser.parse_script_static("""
 CREATE or replace FUNCTION funcs.function_a(inp ANY TYPE) AS ((
   SELECT (inp).(funcs.function_b)() 
@@ -183,8 +164,5 @@ CREATE OR REPLACE TABLE FUNCTION custom_namespace.analytical_hub(input TABLE<val
 extractor = DependencyWalker()
 for statement_node in sql_payload.statement_list_node.statement_list:
     extractor.visit(statement_node)
-
-# if "global" in extractor.graphs and not extractor.graphs["global"]:
-#    del extractor.graphs["global"]
 
 print(json.dumps(extractor.graphs, indent=2))
