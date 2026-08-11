@@ -3,6 +3,7 @@
 from zetasql.api import Parser, ASTNodeVisitor
 from zetasql.types import LanguageOptions
 from topo_walk_utils import print_tree
+import json
 
 # 1. Enable pipe syntax and maximum features
 lang_opts = LanguageOptions.maximum_features()
@@ -89,4 +90,6 @@ for statement_node in sql_payload.statement_list_node.statement_list:
 
 # Print out our built tree structures
 for built_tree in builder.current_node["children"]:
-    print_tree(built_tree)
+    json_string = json.dumps(built_tree, indent=2)
+    print(json_string)
+    # print_tree(built_tree)
