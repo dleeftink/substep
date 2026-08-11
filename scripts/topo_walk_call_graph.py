@@ -24,6 +24,7 @@ class GraphBuilder(ASTNodeVisitor):
         
         # Function & Table-Valued Function (TVF) Calls
         "ASTFunctionCall": "call",
+        "ASTCastExpression": "call",
         "ASTTVF": "call",
     }
 
