@@ -1,3 +1,5 @@
+# A robust, simple AST walker
+
 from zetasql.api import Parser, ASTNodeVisitor
 from zetasql.types import LanguageOptions
 from topo_walk_utils import print_tree
